@@ -188,12 +188,12 @@ void lv_demo_widgets(void)
         lv_obj_align_to(label, logo, LV_ALIGN_OUT_RIGHT_BOTTOM, 10, 0);
     }
 
-    lv_obj_t * t1 = lv_tabview_add_tab(tv, "Profile");
-    lv_obj_t * t2 = lv_tabview_add_tab(tv, "Analytics");
-    lv_obj_t * t3 = lv_tabview_add_tab(tv, "Shop");
+    lv_obj_t * t1 = lv_tabview_add_tab(tv, "Profile");      //elementos del TopNavegationBar
+    //lv_obj_t * t2 = lv_tabview_add_tab(tv, "Analytics");
+    //lv_obj_t * t3 = lv_tabview_add_tab(tv, "Shop");
     profile_create(t1);
-    analytics_create(t2);
-    shop_create(t3);
+    //analytics_create(t2);
+    //shop_create(t3);
 
     color_changer_create(tv);
 }

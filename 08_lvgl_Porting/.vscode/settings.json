@@ -1,6 +1,7 @@
 {
     "files.associations": {
-        "waveshare_rgb_lcd_port.h": "c"
+        "waveshare_rgb_lcd_port.h": "c",
+        "lv_demo_widgets.h": "c"
     },
     "idf.openOcdConfigs": [
         "interface/ftdi/esp32_devkitj_v1.cfg",
