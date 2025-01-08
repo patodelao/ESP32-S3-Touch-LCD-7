@@ -10,18 +10,18 @@ if(NOT EXISTS "C:/Users/alons/esp/v5.3.2/esp-idf/components/bootloader/subprojec
   file(MAKE_DIRECTORY "C:/Users/alons/esp/v5.3.2/esp-idf/components/bootloader/subproject")
 endif()
 file(MAKE_DIRECTORY
-  "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader"
-  "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader-prefix"
-  "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader-prefix/tmp"
-  "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp"
-  "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader-prefix/src"
-  "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp"
+  "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader"
+  "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader-prefix"
+  "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader-prefix/tmp"
+  "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp"
+  "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader-prefix/src"
+  "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp"
 )
 
 set(configSubDirs )
 foreach(subDir IN LISTS configSubDirs)
-    file(MAKE_DIRECTORY "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
+    file(MAKE_DIRECTORY "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
 endforeach()
 if(cfgdir)
-  file(MAKE_DIRECTORY "C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
+  file(MAKE_DIRECTORY "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
 endif()

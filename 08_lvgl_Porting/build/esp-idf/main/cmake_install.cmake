@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/main
+# Install script for directory: C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/main
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

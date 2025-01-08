@@ -1,4 +1,4 @@
-/* * Data converted from C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/esp-idf/mbedtls/x509_crt_bundle
+/* * Data converted from C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/esp-idf/mbedtls/x509_crt_bundle
  */
 .data
 #if !defined (__APPLE__) && !defined (__linux__)

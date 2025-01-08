@@ -39,10 +39,10 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/include/cmake_install.cmake")
-  include("C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/3rdparty/cmake_install.cmake")
-  include("C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/library/cmake_install.cmake")
-  include("C:/Users/alons/Downloads/ESP32-S3-Touch-LCD-7-Demo/ESP32-S3-Touch-LCD-7-Demo/ESP-IDF/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/pkgconfig/cmake_install.cmake")
+  include("C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/include/cmake_install.cmake")
+  include("C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/3rdparty/cmake_install.cmake")
+  include("C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/library/cmake_install.cmake")
+  include("C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build/esp-idf/mbedtls/mbedtls/pkgconfig/cmake_install.cmake")
 
 endif()
 

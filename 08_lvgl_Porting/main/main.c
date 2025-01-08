@@ -17,8 +17,8 @@ void app_main()
     if (lvgl_port_lock(-1)) {
         // lv_demo_stress();
         // lv_demo_benchmark();
-         lv_demo_music();
-        // lv_demo_widgets();
+        // lv_demo_music();
+        lv_demo_widgets();
         // example_lvgl_demo_ui();
         // Release the mutex
         lvgl_port_unlock();
