@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "lvgl_porting",
-    "project_version":    "01d1b12-dirty",
+    "project_version":    "ec7c320-dirty",
     "project_path":       "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting",
     "idf_path":           "C:/Users/alons/esp/v5.3.2/esp-idf",
     "build_dir":          "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/08_lvgl_Porting/build",
