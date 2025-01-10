@@ -1,91 +1,177 @@
 #include "waveshare_rgb_lcd_port.h"
 #include "lvgl.h"
 
-// Variables globales para los campos de texto
+// Paneles
+lv_obj_t *panel1 = NULL;
+lv_obj_t *panel2 = NULL;
+lv_obj_t *panel3 = NULL;
+
+// Variables globales para los campos en panel2
 lv_obj_t *ssid_field = NULL;
 lv_obj_t *password_field = NULL;
 
-// Callback para manejar el clic del botón
+// Función para mostrar un panel
+void show_panel(lv_obj_t *panel)
+{
+    lv_obj_add_flag(panel1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(panel2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(panel3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Callback para el botón "Agregar Red"
+static void btn_add_network_cb(lv_event_t *event)
+{
+    show_panel(panel2);
+}
+
+// Callback para el botón "Buscar Red"
+static void btn_search_network_cb(lv_event_t *event)
+{
+    show_panel(panel3);
+}
+
+// Callback para el botón "Conectar" en panel2
 static void connect_btn_event_cb(lv_event_t *event)
 {
-    // Obtener el SSID y la contraseña
     const char *ssid = lv_textarea_get_text(ssid_field);
     const char *password = lv_textarea_get_text(password_field);
 
-    // Conectar a la red Wi-Fi
     ESP_LOGI("MAIN", "Conectando a la red Wi-Fi...");
     ESP_LOGI("MAIN", "SSID: %s", ssid);
     ESP_LOGI("MAIN", "Contraseña: %s", password);
 }
 
+
+
+
+
+
+
+void create_panel1(lv_obj_t *parent)
+{
+
+    panel1 = lv_obj_create(parent);
+    lv_obj_set_size(panel1, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(panel1, lv_color_white(), 0);
+    lv_obj_set_style_border_width(panel1, 0, 0);
+
+    // fixme tittle label centring in panel
+
+    lv_obj_t *label = lv_label_create(panel1);
+    lv_label_set_text(label, "Configuración de Red");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 10);
+    
+    lv_obj_t *btn_add = lv_btn_create(panel1);
+    lv_obj_set_size(btn_add, 120, 50);
+    lv_obj_align(btn_add, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_t *label_add = lv_label_create(btn_add);
+    lv_label_set_text(label_add, "Agregar Red");
+    lv_obj_add_event_cb(btn_add, btn_add_network_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *btn_search = lv_btn_create(panel1);
+    lv_obj_set_size(btn_search, 120, 50);
+    lv_obj_align(btn_search, LV_ALIGN_TOP_MID, 0, 120);
+    lv_obj_t *label_search = lv_label_create(btn_search);
+    lv_label_set_text(label_search, "Buscar Red");
+    lv_obj_add_event_cb(btn_search, btn_search_network_cb, LV_EVENT_CLICKED, NULL);
+}
+
+
+
+
+
+
+
+
+
+void create_panel2(lv_obj_t *parent)
+{
+    panel2 = lv_obj_create(parent);
+    lv_obj_set_size(panel2, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(panel2, lv_color_white(), 0);
+    lv_obj_set_style_border_width(panel2, 0, 0);
+
+    lv_obj_t *container = lv_obj_create(panel2);
+    lv_obj_set_size(container, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_pad_all(container, 10, 0);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+
+    lv_obj_t *col_container = lv_obj_create(container);
+    lv_obj_set_size(col_container, LV_PCT(70), LV_PCT(100));
+    lv_obj_set_flex_flow(col_container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+
+    ssid_field = lv_textarea_create(col_container);
+    lv_obj_set_width(ssid_field, LV_PCT(100));
+    lv_textarea_set_placeholder_text(ssid_field, "SSID (Red Wi-Fi)");
+
+    password_field = lv_textarea_create(col_container);
+    lv_obj_set_width(password_field, LV_PCT(100));
+    lv_textarea_set_placeholder_text(password_field, "Contraseña");
+    lv_textarea_set_password_mode(password_field, true);
+
+    lv_obj_t *btn_connect = lv_btn_create(container);
+    lv_obj_set_size(btn_connect, 120, 60);
+    lv_obj_t *label_connect = lv_label_create(btn_connect);
+    lv_label_set_text(label_connect, "Conectar");
+    lv_obj_add_event_cb(btn_connect, connect_btn_event_cb, LV_EVENT_CLICKED, NULL);
+}
+
+
+
+
+
+
+
+void create_panel3(lv_obj_t *parent)
+{
+    panel3 = lv_obj_create(parent);
+    lv_obj_set_size(panel3, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(panel3, lv_color_white(), 0);
+    lv_obj_set_style_border_width(panel3, 0, 0);
+
+    lv_obj_t *container = lv_obj_create(panel3);
+    lv_obj_set_size(container, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_pad_all(container, 10, 0);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    for (int i = 0; i < 5; i++) {
+        lv_obj_t *label = lv_label_create(container);
+        lv_label_set_text_fmt(label, "Red Wi-Fi %d", i + 1);
+    }
+}
+
+
+
+
+
+
+
 void app_main()
 {
     // Inicializar la pantalla Waveshare
-    waveshare_esp32_s3_rgb_lcd_init(); // Initialize the Waveshare ESP32-S3 RGB LCD
-    
-    ESP_LOGI("MAIN", "Interfaz Wi-Fi inicializada");
+    waveshare_esp32_s3_rgb_lcd_init();
+    ESP_LOGI("MAIN", "Aplicación inicializada");
 
-    // Bloquear el puerto para inicializar LVGL
     if (lvgl_port_lock(-1)) {
-        // Obtiene la pantalla activa (screen root)
         lv_obj_t *scr = lv_scr_act();
 
-        // Configurar el color de fondo de la pantalla como gris claro
-        lv_obj_set_style_bg_color(scr, lv_color_hex(0xEEEEEE), 0);
+        create_panel1(scr);
+        create_panel2(scr);
+        create_panel3(scr);
 
-        // Crear un panel que ocupe todo el fondo
-        lv_obj_t *panel = lv_obj_create(scr);
-        lv_obj_set_size(panel, LV_PCT(100), LV_PCT(100)); // Panel ocupa todo el fondo
-        lv_obj_center(panel); // Centrar el panel (opcional, ya que ocupa todo el fondo)
-        lv_obj_set_style_bg_color(panel, lv_color_white(), 0);
-        lv_obj_set_style_radius(panel, 0, 0); // Sin bordes redondeados
-        lv_obj_set_style_border_width(panel, 0, 0); // Sin borde
+        // Ocultar todos los paneles excepto panel1 al inicio
+        lv_obj_add_flag(panel2, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(panel3, LV_OBJ_FLAG_HIDDEN);
 
-        // Crear un contenedor que ocupe todo el tamaño del panel
-        lv_obj_t *container = lv_obj_create(panel);
-        lv_obj_set_size(container, LV_PCT(100), LV_PCT(100)); // Contenedor ocupa todo el panel
-        lv_obj_set_style_pad_all(container, 10, 0); // Margen interno de 10 px
-        lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW); // Usar diseño en filas (row)
-        lv_obj_set_flex_align(container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START); // Espaciado
-
-        // Crear el contenedor para los campos de texto (columna izquierda)
-        lv_obj_t *col_container = lv_obj_create(container);
-        lv_obj_set_size(col_container, LV_PCT(70), LV_PCT(100)); // Ancho del 70% del contenedor
-        lv_obj_set_flex_flow(col_container, LV_FLEX_FLOW_COLUMN); // Diseño en columnas (vertical)
-        lv_obj_set_flex_align(col_container, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START); // Espaciado uniforme
-
-        // Crear el campo de texto para el SSID
-        ssid_field = lv_textarea_create(col_container);
-        lv_obj_set_width(ssid_field, LV_PCT(100)); // Ancho al 100% del contenedor
-        lv_textarea_set_placeholder_text(ssid_field, "SSID (Red Wi-Fi)");
-        lv_obj_set_style_pad_top(ssid_field, 10, 0); // Espaciado superior
-        lv_obj_set_style_pad_bottom(ssid_field, 10, 0); // Espaciado inferior
-
-        // Crear el campo de texto para la contraseña
-        password_field = lv_textarea_create(col_container);
-        lv_obj_set_width(password_field, LV_PCT(100)); // Ancho al 100% del contenedor
-        lv_textarea_set_placeholder_text(password_field, "Contraseña");
-        lv_textarea_set_password_mode(password_field, true); // Ocultar caracteres
-        lv_obj_set_style_pad_top(password_field, 10, 0); // Espaciado superior
-        lv_obj_set_style_pad_bottom(password_field, 10, 0); // Espaciado inferior
-
-        // Crear el botón para conectar (columna derecha)
-        lv_obj_t *btn_connect = lv_btn_create(container);
-        lv_obj_set_size(btn_connect, 120, 60); // Tamaño del botón
-        lv_obj_align(btn_connect, LV_ALIGN_CENTER, 0, 0); // Alinear en el contenedor
-        lv_obj_t *label = lv_label_create(btn_connect); // Etiqueta del botón
-        lv_label_set_text(label, "Conectar");
-
-        // Añadir el callback al botón
-        lv_obj_add_event_cb(btn_connect, connect_btn_event_cb, LV_EVENT_CLICKED, NULL);
-
-        // Desbloquear el puerto de LVGL
         lvgl_port_unlock();
     }
 
-    // Bucle principal de tareas de LVGL (si estás usando FreeRTOS)
     while (1) {
-        lv_task_handler(); // Procesa tareas de LVGL
-        vTaskDelay(pdMS_TO_TICKS(10)); // Ajusta según tu sistema operativo
+        lv_task_handler();
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
