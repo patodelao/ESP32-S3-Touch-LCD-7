@@ -188,12 +188,12 @@ void lv_demo_widgets(void)
         lv_obj_align_to(label, logo, LV_ALIGN_OUT_RIGHT_BOTTOM, 10, 0);
     }
 
-    lv_obj_t * t1 = lv_tabview_add_tab(tv, "Wifi Configuration");      //elementos del TopNavegationBar
-    //lv_obj_t * t2 = lv_tabview_add_tab(tv, "Analytics");
-    //lv_obj_t * t3 = lv_tabview_add_tab(tv, "Shop");
+    lv_obj_t * t1 = lv_tabview_add_tab(tv, "Profile");      //elementos del TopNavegationBar
+    lv_obj_t * t2 = lv_tabview_add_tab(tv, "Analytics");
+    lv_obj_t * t3 = lv_tabview_add_tab(tv, "Shop");
     profile_create(t1);
-    //analytics_create(t2);
-    //shop_create(t3);
+    analytics_create(t2);
+    shop_create(t3);
 
     color_changer_create(tv);
 }
@@ -220,7 +220,7 @@ void lv_demo_widgets_close(void)
 
 static void profile_create(lv_obj_t * parent)
 {
-    /*lv_obj_t * panel1 = lv_obj_create(parent);
+    lv_obj_t * panel1 = lv_obj_create(parent);
     lv_obj_set_height(panel1, LV_SIZE_CONTENT);
 
     LV_IMG_DECLARE(img_demo_widgets_avatar);
@@ -264,7 +264,7 @@ static void profile_create(lv_obj_t * parent)
     label = lv_label_create(invite_btn);
     lv_label_set_text(label, "Invite");
     lv_obj_center(label);
-    */
+
     /*Create a keyboard*/
     lv_obj_t * kb = lv_keyboard_create(lv_scr_act());
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
@@ -274,16 +274,16 @@ static void profile_create(lv_obj_t * parent)
     lv_obj_set_height(panel2, LV_SIZE_CONTENT);
 
     lv_obj_t * panel2_title = lv_label_create(panel2);
-    lv_label_set_text(panel2_title, "Wifi");
+    lv_label_set_text(panel2_title, "Your profile");
     lv_obj_add_style(panel2_title, &style_title, 0);
 
     lv_obj_t * user_name_label = lv_label_create(panel2);
-    lv_label_set_text(user_name_label, "SSID");
+    lv_label_set_text(user_name_label, "User name");
     lv_obj_add_style(user_name_label, &style_text_muted, 0);
 
     lv_obj_t * user_name = lv_textarea_create(panel2);
     lv_textarea_set_one_line(user_name, true);
-    lv_textarea_set_placeholder_text(user_name, "Password");
+    lv_textarea_set_placeholder_text(user_name, "Your name");
     lv_obj_add_event_cb(user_name, ta_event_cb, LV_EVENT_ALL, kb);
 
     lv_obj_t * password_label = lv_label_create(panel2);
