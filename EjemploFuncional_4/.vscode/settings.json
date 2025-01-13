@@ -1,0 +1,9 @@
+{
+    "idf.portWin": "COM7",
+    "idf.flashType": "UART",
+    "files.associations": {
+        "lvgl.h": "c",
+        "esp_lcd_touch_gt911.h": "c",
+        "esp_lcd_touch.h": "c"
+    }
+}
