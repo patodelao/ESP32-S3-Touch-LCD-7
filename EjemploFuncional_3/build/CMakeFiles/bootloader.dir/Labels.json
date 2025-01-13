@@ -2,34 +2,34 @@
 	"sources" : 
 	[
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/CMakeFiles/bootloader"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/CMakeFiles/bootloader"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/CMakeFiles/bootloader.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/CMakeFiles/bootloader.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/CMakeFiles/bootloader-complete.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/CMakeFiles/bootloader-complete.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
 		},
 		{
-			"file" : "C:/Users/patricio.delao/Desktop/ESP32-S3-Touch-LCD-7_Code/ESP-IDF-5.3.0/lvgl_Porting/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
+			"file" : "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_3/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
 		}
 	],
 	"target" : 
