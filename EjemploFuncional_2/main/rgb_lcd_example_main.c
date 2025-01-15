@@ -5,8 +5,12 @@
  */
 
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "esp_wifi.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_timer.h"
@@ -15,6 +19,8 @@
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_event.h"
+#include "nvs_flash.h"
 #include "lvgl.h"
 #include "demos/lv_demos.h"
 
@@ -81,16 +87,17 @@ static const char *TAG = "example";
 
 static SemaphoreHandle_t lvgl_mux = NULL;
 
+#define DEFAULT_SCAN_LIST_SIZE 5 // numero de redes a escanear
+
 // we use two semaphores to sync the VSYNC event and the LVGL task, to avoid potential tearing effect
 #if CONFIG_EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
 SemaphoreHandle_t sem_vsync_end;
 SemaphoreHandle_t sem_gui_ready;
 #endif
 
+static lv_obj_t *ssid_dropdown;
 
 
-
-#include "lvgl.h"
 
 static void button_event_handler(lv_event_t *event) {
     lv_event_code_t code = lv_event_get_code(event);
@@ -107,71 +114,139 @@ static void button_event_handler(lv_event_t *event) {
     }
 }
 
-void create_touch_widget(lv_disp_t *disp) { // prueba con 2 botones  FUNCIONAAAAAAAAAAAAAAAAAA
-    // Crear pantalla y fondo gris
-    lv_obj_t *scr = lv_disp_get_scr_act(disp);
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x808080), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER,0);
+#define MAX_NETWORKS 5
+static wifi_ap_record_t top_networks[MAX_NETWORKS];
 
-    // Crear contenedor principal
+static void wifi_scan(void) {
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+    assert(sta_netif);
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
+    wifi_ap_record_t *ap_info = malloc(DEFAULT_SCAN_LIST_SIZE * sizeof(wifi_ap_record_t));
+    if (!ap_info) {
+        ESP_LOGE(TAG, "No se pudo asignar memoria para ap_info");
+        return;
+    }
+    memset(ap_info, 0, DEFAULT_SCAN_LIST_SIZE * sizeof(wifi_ap_record_t));
+
+    uint16_t ap_count = 0;
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_scan_start(NULL, true));
+
+    ESP_LOGI(TAG, "Escaneando redes Wi-Fi...");
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
+
+    ESP_LOGI(TAG, "Total de redes detectadas: %u", ap_count);
+
+    // Guardar las 5 redes con mayor intensidad en top_networks
+    memset(top_networks, 0, sizeof(top_networks));
+    for (int i = 0; i < number; i++) {
+        ESP_LOGI(TAG, "SSID: %s, RSSI: %d", ap_info[i].ssid, ap_info[i].rssi);
+
+        for (int j = 0; j < 5; j++) {
+            if (strlen((char *)top_networks[j].ssid) == 0 || ap_info[i].rssi > top_networks[j].rssi) {
+                for (int k = 4; k > j; k--) {
+                    top_networks[k] = top_networks[k - 1];
+                }
+                top_networks[j] = ap_info[i];
+                break;
+            }
+        }
+    }
+
+    free(ap_info);
+}
+
+static void scan_button_event_handler(lv_event_t *event) {
+    ESP_LOGI(TAG, "Actualizando opciones del dropdown...");
+
+    // Guardar el índice seleccionado actual
+    int selected_index = lv_dropdown_get_selected(ssid_dropdown);
+
+    // Actualizar las opciones del dropdown
+    lv_dropdown_clear_options(ssid_dropdown);
+    for (int i = 0; i < 5; i++) {
+        if (strlen((char *)top_networks[i].ssid) > 0) {
+            lv_dropdown_add_option(ssid_dropdown, (const char *)top_networks[i].ssid, LV_DROPDOWN_POS_LAST);
+        }
+    }
+
+    // Restaurar el índice seleccionado, o establecer al primero si ya no es válido
+    if (selected_index >= lv_dropdown_get_option_cnt(ssid_dropdown)) {
+        selected_index = 0; // Si el índice es inválido, seleccionar la primera opción
+    }
+    lv_dropdown_set_selected(ssid_dropdown, selected_index);
+}
+
+static void connect_button_event_handler(lv_event_t *event) {
+    char selected_ssid[33]; // Buffer para almacenar el SSID seleccionado
+    lv_dropdown_get_selected_str(ssid_dropdown, selected_ssid, sizeof(selected_ssid));
+
+    const char *password = lv_textarea_get_text((lv_obj_t *)lv_event_get_user_data(event));
+
+    ESP_LOGI(TAG, "Intentando conectar a SSID: %s con contraseña: %s", selected_ssid, password);
+    // Implementa la lógica para conectarte al Wi-Fi aquí
+}
+
+void create_wifi_settings_widget(lv_disp_t *disp) {
+    // Crear pantalla y fondo
+    lv_obj_t *scr = lv_disp_get_scr_act(disp);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+
+    // Contenedor principal
     lv_obj_t *container = lv_obj_create(scr);
-    lv_obj_set_size(container, 400, 240);
+    lv_obj_set_size(container, 300, 400);
     lv_obj_center(container);
     lv_obj_set_style_bg_color(container, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(container, LV_OPA_50,0);
-    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_bg_opa(container, LV_OPA_COVER, 0);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
 
-    // Crear primer panel
-    lv_obj_t *panel1 = lv_obj_create(container);
-    lv_obj_set_size(panel1, 180, 200);
-    lv_obj_set_style_bg_color(panel1, lv_color_hex(0xC0C0C0), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(panel1, LV_OPA_COVER,0);
+    // Dropdown para SSIDs
+    ssid_dropdown = lv_dropdown_create(container);
+    lv_obj_set_width(ssid_dropdown, 200);
+    lv_dropdown_set_options(ssid_dropdown, "Seleccione una red...");
 
-    lv_obj_t *btn1 = lv_btn_create(panel1);
-    lv_obj_set_size(btn1, 120, 50);
-    lv_obj_center(btn1);
-    lv_obj_add_event_cb(btn1, button_event_handler, LV_EVENT_CLICKED, NULL);
+    // Campo de texto para contraseña
+    lv_obj_t *password_textarea = lv_textarea_create(container);
+    lv_textarea_set_one_line(password_textarea, true);
+    lv_textarea_set_password_mode(password_textarea, true);
+    lv_textarea_set_placeholder_text(password_textarea, "Ingrese contraseña");
+    lv_obj_set_width(password_textarea, 200);
 
-    lv_obj_t *label1 = lv_label_create(btn1);
-    lv_label_set_text(label1, "No presionado");
-    lv_obj_center(label1);
+    // Botón de escaneo
+    lv_obj_t *scan_btn = lv_btn_create(container);
+    lv_obj_set_size(scan_btn, 120, 50);
+    lv_obj_t *scan_label = lv_label_create(scan_btn);
+    lv_label_set_text(scan_label, "Escanear");
+    lv_obj_center(scan_label);
+    lv_obj_add_event_cb(scan_btn, scan_button_event_handler, LV_EVENT_CLICKED, NULL);
 
-    // Crear segundo panel
-    lv_obj_t *panel2 = lv_obj_create(container);
-    lv_obj_set_size(panel2, 180, 200);
-    lv_obj_set_style_bg_color(panel2, lv_color_hex(0xC0C0C0), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(panel2, LV_OPA_COVER,0);
-
-    lv_obj_t *btn2 = lv_btn_create(panel2);
-    lv_obj_set_size(btn2, 120, 50);
-    lv_obj_center(btn2);
-    lv_obj_add_event_cb(btn2, button_event_handler, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *label2 = lv_label_create(btn2);
-    lv_label_set_text(label2, "No presionado");
-    lv_obj_center(label2);
+    // Botón para conectar
+    lv_obj_t *connect_btn = lv_btn_create(container);
+    lv_obj_set_size(connect_btn, 120, 50);
+    lv_obj_t *connect_label = lv_label_create(connect_btn);
+    lv_label_set_text(connect_label, "Conectar");
+    lv_obj_center(connect_label);
+    lv_obj_add_event_cb(connect_btn, connect_button_event_handler, LV_EVENT_CLICKED, password_textarea);
 }
 
-
-
-static void wifi_connect_event_handler(lv_event_t *event) { /// PRUEBA CON INTERFAZ DE WIFI, SE VE BIEN. NO HACE NADA (TODAVIA)
-    lv_event_code_t code = lv_event_get_code(event);
-
-    if (code == LV_EVENT_CLICKED) {
-        lv_obj_t *ssid_field = (lv_obj_t *)lv_event_get_user_data(event);
-        const char *ssid = lv_textarea_get_text(ssid_field);
-
-        lv_obj_t *password_field = lv_obj_get_child(ssid_field, NULL);
-        const char *password = lv_textarea_get_text(password_field);
-
-        // Aquí puedes integrar la lógica para conectarte al Wi-Fi usando ssid y password
-        printf("Conectando a SSID: %s con contraseña: %s\n", ssid, password);
+void initialize_wifi_event_loop() {
+    static bool initialized = false;
+    if (!initialized) {
+        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        initialized = true;
     }
 }
-
-
-
 
 
 
@@ -186,7 +261,6 @@ static void wifi_connect_event_handler(lv_event_t *event) { /// PRUEBA CON INTER
 
 static lv_obj_t *prev_screen;
 static lv_obj_t *keyboard;
-static lv_obj_t *last_textarea;
 
 static void keyboard_event_handler(lv_event_t *event) {
     lv_event_code_t code = lv_event_get_code(event);
@@ -196,14 +270,13 @@ static void keyboard_event_handler(lv_event_t *event) {
         lv_obj_t *textarea = lv_keyboard_get_textarea(keyboard);
 
         if (textarea) {
-            // Obtener y procesar el texto del campo si es necesario
+            // Procesar el texto si es necesario
             const char *text = lv_textarea_get_text(textarea);
             printf("Texto guardado: %s\n", text);
         }
 
-        // Ocultar el teclado en lugar de eliminarlo
+        // Ocultar teclado sin eliminarlo
         lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-        last_textarea = textarea; // Mantener referencia al último textarea
     }
 }
 
@@ -218,12 +291,9 @@ static void textarea_event_handler(lv_event_t *event) {
             lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
         }
 
-        // Mostrar el teclado y asociarlo al textarea
-        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        // Asociar el teclado al textarea y mostrarlo
         lv_keyboard_set_textarea(keyboard, textarea);
-
-        // Actualizar la referencia al último textarea
-        last_textarea = textarea;
+        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -234,79 +304,25 @@ static void back_button_event_handler(lv_event_t *event) {
     }
 }
 
-static void next_screen_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
 
-    if (code == LV_EVENT_CLICKED) {
-        // Crear nueva pantalla
-        lv_obj_t *next_scr = lv_obj_create(NULL);
-        lv_obj_set_style_bg_color(next_scr, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(next_scr, LV_OPA_COVER, 0);
 
-        // Botón de atrás
-        lv_obj_t *back_btn = lv_btn_create(next_scr);
-        lv_obj_set_size(back_btn, 100, 50);
-        lv_obj_align(back_btn, LV_ALIGN_TOP_LEFT, 10, 10);
-        lv_obj_t *back_label = lv_label_create(back_btn);
-        lv_label_set_text(back_label, "Atrás");
-        lv_obj_center(back_label);
 
-        lv_obj_add_event_cb(back_btn, back_button_event_handler, LV_EVENT_CLICKED, NULL);
 
-        // Cargar nueva pantalla
-        prev_screen = lv_scr_act();
-        lv_disp_load_scr(next_scr);
-    }
-}
 
-void create_wifi_settings_widget(lv_disp_t *disp) {
-    // Crear pantalla y fondo
-    lv_obj_t *scr = lv_disp_get_scr_act(disp);
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
 
-    // Contenedor principal
-    lv_obj_t *container = lv_obj_create(scr);
-    lv_obj_set_size(container, 300, 300);
-    lv_obj_center(container);
-    lv_obj_set_style_bg_color(container, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(container, LV_OPA_COVER, 0);
-    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
 
-    // Etiqueta SSID
-    lv_obj_t *ssid_label = lv_label_create(container);
-    lv_label_set_text(ssid_label, "SSID:");
 
-    // Campo de texto SSID
-    lv_obj_t *ssid_textarea = lv_textarea_create(container);
-    lv_textarea_set_one_line(ssid_textarea, true);
-    lv_textarea_set_placeholder_text(ssid_textarea, "Ingrese SSID");
-    lv_obj_set_width(ssid_textarea, 200);
-    lv_obj_add_event_cb(ssid_textarea, textarea_event_handler, LV_EVENT_ALL, NULL);
 
-    // Etiqueta Contraseña
-    lv_obj_t *password_label = lv_label_create(container);
-    lv_label_set_text(password_label, "Contraseña:");
 
-    // Campo de texto Contraseña
-    lv_obj_t *password_textarea = lv_textarea_create(container);
-    lv_textarea_set_one_line(password_textarea, true);
-    lv_textarea_set_password_mode(password_textarea, true);
-    lv_textarea_set_placeholder_text(password_textarea, "Ingrese contraseña");
-    lv_obj_set_width(password_textarea, 200);
-    lv_obj_add_event_cb(password_textarea, textarea_event_handler, LV_EVENT_ALL, NULL);
 
-    // Botón de conectar
-    lv_obj_t *connect_btn = lv_btn_create(container);
-    lv_obj_set_size(connect_btn, 120, 50);
-    lv_obj_t *connect_label = lv_label_create(connect_btn);
-    lv_label_set_text(connect_label, "Conectar");
-    lv_obj_center(connect_label);
 
-    // Asignar el evento
-    lv_obj_add_event_cb(connect_btn, next_screen_event_handler, LV_EVENT_CLICKED, NULL);
-}
+
+
+
+
+
+
+
 
 
 
@@ -477,6 +493,15 @@ static void example_lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 }
 void app_main(void)
 {
+    // Initialize NVS
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
 
@@ -535,14 +560,14 @@ void app_main(void)
             .h_res = EXAMPLE_LCD_H_RES,
             .v_res = EXAMPLE_LCD_V_RES,
             // The following parameters should refer to LCD spec
-            .hsync_back_porch = 8,
-            .hsync_front_porch = 8,
-            .hsync_pulse_width = 4,
-            .vsync_back_porch = 16,
-            .vsync_front_porch = 16,
-            .vsync_pulse_width = 4,
-            .flags.pclk_active_neg = true,
-        },
+            .hsync_back_porch = 40,  // Margen posterior horizontal
+        .hsync_front_porch = 20, // Margen anterior horizontal
+        .hsync_pulse_width = 4,  // Ancho del pulso HSYNC
+        .vsync_back_porch = 8,   // Margen posterior vertical
+        .vsync_front_porch = 8,  // Margen anterior vertical
+        .vsync_pulse_width = 4,  // Ancho del pulso VSYNC
+        .flags.pclk_active_neg = true,
+    },
         .flags.fb_in_psram = true, // allocate frame buffer in PSRAM
     };
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &panel_handle));
@@ -673,4 +698,8 @@ void app_main(void)
         // Release the mutex
         example_lvgl_unlock();
     }
+    wifi_scan();
+
+    ESP_LOGI(TAG, "Start LVGL task");
+    xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
 }

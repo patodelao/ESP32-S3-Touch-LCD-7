@@ -265,6 +265,13 @@ C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/soc/CMakeFiles/install.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/soc/CMakeFiles/install/local.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/soc/CMakeFiles/install/strip.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_security/CMakeFiles/__idf_esp_security.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_security/CMakeFiles/edit_cache.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_security/CMakeFiles/rebuild_cache.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_security/CMakeFiles/list_install_components.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_security/CMakeFiles/install.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_security/CMakeFiles/install/local.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_security/CMakeFiles/install/strip.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_hw_support/CMakeFiles/__idf_esp_hw_support.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_hw_support/CMakeFiles/edit_cache.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/esp_hw_support/CMakeFiles/rebuild_cache.dir
@@ -788,6 +795,13 @@ C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/perfmon/CMakeFiles/install.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/perfmon/CMakeFiles/install/local.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/perfmon/CMakeFiles/install/strip.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/rt/CMakeFiles/__idf_rt.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/rt/CMakeFiles/edit_cache.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/rt/CMakeFiles/rebuild_cache.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/rt/CMakeFiles/list_install_components.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/rt/CMakeFiles/install.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/rt/CMakeFiles/install/local.dir
+C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/rt/CMakeFiles/install/strip.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/spiffs/CMakeFiles/__idf_spiffs.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/spiffs/CMakeFiles/edit_cache.dir
 C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build/esp-idf/spiffs/CMakeFiles/rebuild_cache.dir
