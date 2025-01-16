@@ -124,6 +124,34 @@ static TaskHandle_t wifi_scan_task_handle = NULL; // Handle para la tarea de esc
 #define MAX_NETWORKS 5
 static wifi_ap_record_t top_networks[MAX_NETWORKS];
 
+// Tarea para manejar la conexión Wi-Fi
+static void wifi_connect_task(void *param) {
+    wifi_config_t *wifi_config = (wifi_config_t *)param;
+
+    // Configurar la red Wi-Fi
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, wifi_config);
+    if (err == ESP_OK) {
+        err = esp_wifi_connect();
+    }
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error al conectar a la red Wi-Fi: %s", esp_err_to_name(err));
+        if (example_lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo conectar a la red Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            example_lvgl_unlock();
+        }
+    }
+
+    // Liberar memoria del parámetro recibido
+    free(wifi_config);
+
+    // Terminar la tarea
+    vTaskDelete(NULL);
+}
+
+
+
 static void wifi_scan_task(void *param) {
     ESP_LOGI(TAG, "Iniciando escaneo Wi-Fi...");
 
@@ -199,41 +227,12 @@ static void remove_floating_msgbox(lv_event_t *event) {
 
 static void scan_button_event_handler(lv_event_t *event) {
     if (wifi_scan_task_handle == NULL) { // Verificar que no haya un escaneo en curso
-        ESP_LOGI(TAG, "Creando tarea de escaneo en Core 1...");
-        xTaskCreatePinnedToCore(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, &wifi_scan_task_handle, 1);
+        ESP_LOGI(TAG, "Creando tarea de escaneo en Core 0...");
+        xTaskCreatePinnedToCore(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, &wifi_scan_task_handle, 0);
     } else {
         ESP_LOGW(TAG, "Escaneo ya en curso...");
     }
 }
-
-
-static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        ESP_LOGI(TAG, "Wi-Fi iniciado en modo estación.");
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "Desconectado de la red Wi-Fi. Intentando reconectar...");
-        esp_wifi_connect(); // Intenta reconectar automáticamente
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-        char message[128];
-        snprintf(message, sizeof(message), "Conectado a la red.\nIP: " IPSTR "\nMask: " IPSTR,
-                 IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.netmask));
-
-        ESP_LOGI(TAG, "Conexión exitosa. Dirección IP: " IPSTR, IP2STR(&event->ip_info.ip));
-
-        // Mostrar mensaje en pantalla
-    if (example_lvgl_lock(-1)) {
-        floating_msgbox = lv_msgbox_create(NULL, "Conexión Exitosa", message, (const char *[]){"Aceptar", NULL}, false);
-        lv_obj_center(floating_msgbox);
-        lv_obj_add_event_cb(floating_msgbox, remove_floating_msgbox, LV_EVENT_VALUE_CHANGED, NULL);
-        example_lvgl_unlock();
-    } else {
-        ESP_LOGE(TAG, "No se pudo obtener el bloqueo de LVGL.");
-    }
-}
-}
-
-
 static void connect_button_event_handler(lv_event_t *event) {
     char selected_ssid[33];
     lv_dropdown_get_selected_str(ssid_dropdown, selected_ssid, sizeof(selected_ssid));
@@ -243,35 +242,68 @@ static void connect_button_event_handler(lv_event_t *event) {
     // Validar que se haya seleccionado un SSID válido
     if (strcmp(selected_ssid, "Seleccione una red...") == 0 || strlen(selected_ssid) == 0) {
         ESP_LOGW(TAG, "No se seleccionó una red válida.");
-        lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Seleccione una red válida.", NULL, true);
-        lv_obj_center(msgbox);
+        if (example_lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Seleccione una red válida.", NULL, true);
+            lv_obj_center(msgbox);
+            example_lvgl_unlock();
+        }
         return;
     }
 
-    // Validar que se haya ingresado una contraseña (si es necesario)
+    // Validar que se haya ingresado una contraseña válida
     if (strlen(password) == 0 || strlen(password) < 8) {
-        ESP_LOGW(TAG, "No se ingresó una contraseña.");
-        lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Ingrese una contraseña.", NULL, true);
-        lv_obj_center(msgbox);
+        ESP_LOGW(TAG, "No se ingresó una contraseña válida.");
+        if (example_lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Ingrese una contraseña válida (al menos 8 caracteres).", NULL, true);
+            lv_obj_center(msgbox);
+            example_lvgl_unlock();
+        }
         return;
     }
 
     ESP_LOGI(TAG, "Intentando conectar a SSID: %s con contraseña: %s", selected_ssid, password);
 
-    // Configura la red Wi-Fi
-    wifi_config_t wifi_config = {
-        .sta = {
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-        },
-    };
-    strncpy((char *)wifi_config.sta.ssid, selected_ssid, sizeof(wifi_config.sta.ssid));
-    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+    // Crear un mensaje flotante mientras se realiza la conexión
+    if (example_lvgl_lock(-1)) {
+        floating_msgbox = lv_msgbox_create(NULL, "Conexión en proceso", "Conectando a la red...", NULL, true);
+        lv_obj_center(floating_msgbox);
+        example_lvgl_unlock();
+    }
 
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_connect());
+    // Configurar Wi-Fi
+    wifi_config_t *wifi_config = malloc(sizeof(wifi_config_t));
+    if (!wifi_config) {
+        ESP_LOGE(TAG, "Fallo al asignar memoria para la configuración Wi-Fi");
+        return;
+    }
+
+    memset(wifi_config, 0, sizeof(wifi_config_t));
+    strncpy((char *)wifi_config->sta.ssid, selected_ssid, sizeof(wifi_config->sta.ssid));
+    strncpy((char *)wifi_config->sta.password, password, sizeof(wifi_config->sta.password));
+    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+    // Crear tarea para realizar la conexión en Core 0
+    xTaskCreatePinnedToCore(wifi_connect_task, "wifi_connect_task", 4096, wifi_config, 5, NULL, 0);
 }
-
-
+// Nueva función para manejar la desconexión
+static void disconnect_button_event_handler(lv_event_t *event) {
+    esp_err_t err = esp_wifi_disconnect();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Desconexión exitosa.");
+        if (example_lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Desconectado", "Se ha desconectado de la red Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            example_lvgl_unlock();
+        }
+    } else {
+        ESP_LOGE(TAG, "Error al desconectar: %s", esp_err_to_name(err));
+        if (example_lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo desconectar de la red Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            example_lvgl_unlock();
+        }
+    }
+}
 
 static lv_obj_t *keyboard;
 
@@ -317,8 +349,6 @@ static void textarea_event_handler(lv_event_t *event) {
     }
 }
 
-
-
 void create_wifi_settings_widget(lv_disp_t *disp) {
     // Crear pantalla y fondo
     lv_obj_t *scr = lv_disp_get_scr_act(disp);
@@ -345,10 +375,9 @@ void create_wifi_settings_widget(lv_disp_t *disp) {
     lv_textarea_set_password_mode(password_textarea, true);
     lv_textarea_set_placeholder_text(password_textarea, "Ingrese contraseña");
     lv_obj_set_width(password_textarea, 200);
-    // Vincular evento para abrir el teclado al enfocar
     lv_obj_add_event_cb(password_textarea, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
 
-    // Botón de escaneo
+    // Botón para escanear
     lv_obj_t *scan_btn = lv_btn_create(container);
     lv_obj_set_size(scan_btn, 120, 50);
     lv_obj_t *scan_label = lv_label_create(scan_btn);
@@ -363,12 +392,15 @@ void create_wifi_settings_widget(lv_disp_t *disp) {
     lv_label_set_text(connect_label, "Conectar");
     lv_obj_center(connect_label);
     lv_obj_add_event_cb(connect_btn, connect_button_event_handler, LV_EVENT_CLICKED, password_textarea);
+
+    // Botón para desconectar
+    lv_obj_t *disconnect_btn = lv_btn_create(container);
+    lv_obj_set_size(disconnect_btn, 120, 50);
+    lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
+    lv_label_set_text(disconnect_label, "Desconectar");
+    lv_obj_center(disconnect_label);
+    lv_obj_add_event_cb(disconnect_btn, disconnect_button_event_handler, LV_EVENT_CLICKED, NULL);
 }
-
-
-
-
-
 
 
 
@@ -813,8 +845,8 @@ void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp)
 
     lvgl_mux = xSemaphoreCreateRecursiveMutex();
     assert(lvgl_mux);
-    ESP_LOGI(TAG, "Create LVGL task");
-    xTaskCreatePinnedToCore(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, disp, EXAMPLE_LVGL_TASK_PRIORITY, NULL, 0);
+    ESP_LOGI(TAG, "Create LVGL task en core 1");
+    xTaskCreatePinnedToCore(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, disp, 6, NULL, 1);
 
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
