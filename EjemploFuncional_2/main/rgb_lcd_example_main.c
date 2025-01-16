@@ -50,7 +50,11 @@ void init_i2c();
 esp_lcd_touch_handle_t init_touch(esp_lcd_panel_handle_t panel_handle);
 lv_disp_t *init_lvgl(esp_lcd_panel_handle_t panel_handle);
 void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp);
+static void scan_button_event_handler(lv_event_t *event);
 void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_drv_t *disp_drv);
+void initialize_wifi_event_loop(void);
+bool example_lvgl_lock(int timeout_ms);
+void example_lvgl_unlock(void);
 
 
 
@@ -113,91 +117,207 @@ SemaphoreHandle_t sem_gui_ready;
 #endif
 
 static lv_obj_t *ssid_dropdown;
-
+static TaskHandle_t wifi_scan_task_handle = NULL; // Handle para la tarea de escaneo
 
 
 
 #define MAX_NETWORKS 5
 static wifi_ap_record_t top_networks[MAX_NETWORKS];
 
-static void wifi_scan(void) {
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
-    assert(sta_netif);
+static void wifi_scan_task(void *param) {
+    ESP_LOGI(TAG, "Iniciando escaneo Wi-Fi...");
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    uint16_t number = DEFAULT_SCAN_LIST_SIZE;
+    uint16_t ap_count = 0;
     wifi_ap_record_t *ap_info = malloc(DEFAULT_SCAN_LIST_SIZE * sizeof(wifi_ap_record_t));
     if (!ap_info) {
         ESP_LOGE(TAG, "No se pudo asignar memoria para ap_info");
+        vTaskDelete(NULL);
         return;
     }
-    memset(ap_info, 0, DEFAULT_SCAN_LIST_SIZE * sizeof(wifi_ap_record_t));
 
-    uint16_t ap_count = 0;
+    // Configuración del escaneo Wi-Fi
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active.min = 50, // Tiempo mínimo por canal (ms)
+        .scan_time.active.max = 500, // Tiempo máximo total (1s)
+    };
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_ERROR_CHECK(esp_wifi_scan_start(NULL, true));
+    // Iniciar el escaneo
+    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, false));
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo para el escaneo
 
-    ESP_LOGI(TAG, "Escaneando redes Wi-Fi...");
+    // Cancelar escaneo si está activo
+    esp_wifi_scan_stop();
+
+    // Obtener registros
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_info));
-
     ESP_LOGI(TAG, "Total de redes detectadas: %u", ap_count);
 
-    // Guardar las 5 redes con mayor intensidad en top_networks
-    memset(top_networks, 0, sizeof(top_networks));
-    for (int i = 0; i < number; i++) {
-        ESP_LOGI(TAG, "SSID: %s, RSSI: %d", ap_info[i].ssid, ap_info[i].rssi);
+    uint16_t num_to_fetch = ap_count < DEFAULT_SCAN_LIST_SIZE ? ap_count : DEFAULT_SCAN_LIST_SIZE;
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&num_to_fetch, ap_info));
 
-        for (int j = 0; j < 5; j++) {
-            if (strlen((char *)top_networks[j].ssid) == 0 || ap_info[i].rssi > top_networks[j].rssi) {
-                for (int k = 4; k > j; k--) {
-                    top_networks[k] = top_networks[k - 1];
-                }
-                top_networks[j] = ap_info[i];
-                break;
-            }
+    // Guardar SSID en el arreglo `top_networks`
+    memset(top_networks, 0, sizeof(top_networks));
+    for (int i = 0; i < num_to_fetch; i++) {
+        top_networks[i] = ap_info[i];
+        ESP_LOGI(TAG, "SSID: %s, RSSI: %d", ap_info[i].ssid, ap_info[i].rssi);
+    }
+    free(ap_info);
+
+    // Actualizar el dropdown en la siguiente actualización de pantalla
+    if (example_lvgl_lock(-1)) {
+        char dropdown_options[256] = {0};
+        for (int i = 0; i < num_to_fetch; i++) {
+            strcat(dropdown_options, (char *)top_networks[i].ssid);
+            if (i < num_to_fetch - 1) strcat(dropdown_options, "\n");
         }
+        lv_dropdown_set_options(ssid_dropdown, dropdown_options);
+        example_lvgl_unlock();
     }
 
-    free(ap_info);
+    ESP_LOGI(TAG, "Escaneo completado.");
+    wifi_scan_task_handle = NULL; // Resetear el handle de la tarea
+    vTaskDelete(NULL);
 }
+
+
+static lv_obj_t *floating_msgbox = NULL;
+
+// Función para eliminar el mensaje flotante
+static void remove_floating_msgbox(lv_event_t *event) {
+    if (floating_msgbox != NULL) {
+        lv_obj_del(floating_msgbox);
+        floating_msgbox = NULL;
+    }
+}
+
+
 
 static void scan_button_event_handler(lv_event_t *event) {
-    ESP_LOGI(TAG, "Actualizando opciones del dropdown...");
-
-    // Guardar el índice seleccionado actual
-    int selected_index = lv_dropdown_get_selected(ssid_dropdown);
-
-    // Actualizar las opciones del dropdown
-    lv_dropdown_clear_options(ssid_dropdown);
-    for (int i = 0; i < 5; i++) {
-        if (strlen((char *)top_networks[i].ssid) > 0) {
-            lv_dropdown_add_option(ssid_dropdown, (const char *)top_networks[i].ssid, LV_DROPDOWN_POS_LAST);
-        }
+    if (wifi_scan_task_handle == NULL) { // Verificar que no haya un escaneo en curso
+        ESP_LOGI(TAG, "Creando tarea de escaneo en Core 1...");
+        xTaskCreatePinnedToCore(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, &wifi_scan_task_handle, 1);
+    } else {
+        ESP_LOGW(TAG, "Escaneo ya en curso...");
     }
-
-    // Restaurar el índice seleccionado, o establecer al primero si ya no es válido
-    if (selected_index >= lv_dropdown_get_option_cnt(ssid_dropdown)) {
-        selected_index = 0; // Si el índice es inválido, seleccionar la primera opción
-    }
-    lv_dropdown_set_selected(ssid_dropdown, selected_index);
 }
 
+
+static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        ESP_LOGI(TAG, "Wi-Fi iniciado en modo estación.");
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGW(TAG, "Desconectado de la red Wi-Fi. Intentando reconectar...");
+        esp_wifi_connect(); // Intenta reconectar automáticamente
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        char message[128];
+        snprintf(message, sizeof(message), "Conectado a la red.\nIP: " IPSTR "\nMask: " IPSTR,
+                 IP2STR(&event->ip_info.ip), IP2STR(&event->ip_info.netmask));
+
+        ESP_LOGI(TAG, "Conexión exitosa. Dirección IP: " IPSTR, IP2STR(&event->ip_info.ip));
+
+        // Mostrar mensaje en pantalla
+    if (example_lvgl_lock(-1)) {
+        floating_msgbox = lv_msgbox_create(NULL, "Conexión Exitosa", message, (const char *[]){"Aceptar", NULL}, false);
+        lv_obj_center(floating_msgbox);
+        lv_obj_add_event_cb(floating_msgbox, remove_floating_msgbox, LV_EVENT_VALUE_CHANGED, NULL);
+        example_lvgl_unlock();
+    } else {
+        ESP_LOGE(TAG, "No se pudo obtener el bloqueo de LVGL.");
+    }
+}
+}
+
+
 static void connect_button_event_handler(lv_event_t *event) {
-    char selected_ssid[33]; // Buffer para almacenar el SSID seleccionado
+    char selected_ssid[33];
     lv_dropdown_get_selected_str(ssid_dropdown, selected_ssid, sizeof(selected_ssid));
 
     const char *password = lv_textarea_get_text((lv_obj_t *)lv_event_get_user_data(event));
 
+    // Validar que se haya seleccionado un SSID válido
+    if (strcmp(selected_ssid, "Seleccione una red...") == 0 || strlen(selected_ssid) == 0) {
+        ESP_LOGW(TAG, "No se seleccionó una red válida.");
+        lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Seleccione una red válida.", NULL, true);
+        lv_obj_center(msgbox);
+        return;
+    }
+
+    // Validar que se haya ingresado una contraseña (si es necesario)
+    if (strlen(password) == 0 || strlen(password) < 8) {
+        ESP_LOGW(TAG, "No se ingresó una contraseña.");
+        lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Ingrese una contraseña.", NULL, true);
+        lv_obj_center(msgbox);
+        return;
+    }
+
     ESP_LOGI(TAG, "Intentando conectar a SSID: %s con contraseña: %s", selected_ssid, password);
-    // Implementa la lógica para conectarte al Wi-Fi aquí
+
+    // Configura la red Wi-Fi
+    wifi_config_t wifi_config = {
+        .sta = {
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+    strncpy((char *)wifi_config.sta.ssid, selected_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_connect());
 }
+
+
+
+static lv_obj_t *keyboard;
+
+static void keyboard_event_handler(lv_event_t *event) {
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *keyboard = lv_event_get_target(event);
+
+    if (code == LV_EVENT_CANCEL || code == LV_EVENT_READY) {
+        lv_obj_t *textarea = lv_keyboard_get_textarea(keyboard);
+
+        if (textarea) {
+            // Procesar el texto si es necesario
+            const char *text = lv_textarea_get_text(textarea);
+            printf("Texto guardado: %s\n", text);
+        }
+
+        // Ocultar teclado sin eliminarlo
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+
+
+
+static void textarea_event_handler(lv_event_t *event) {
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *textarea = lv_event_get_target(event);
+
+    if (code == LV_EVENT_FOCUSED) {
+        if (!keyboard) {
+            // Crear teclado si no existe
+            keyboard = lv_keyboard_create(lv_scr_act());
+            lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
+        }
+
+        // Asociar el teclado al textarea y mostrarlo
+        lv_keyboard_set_textarea(keyboard, textarea);
+
+        // Asegúrate de que el teclado no esté oculto
+        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_opa(keyboard, LV_OPA_COVER, LV_PART_MAIN); // Mostrarlo con opacidad completa
+    }
+}
+
+
 
 void create_wifi_settings_widget(lv_disp_t *disp) {
     // Crear pantalla y fondo
@@ -225,6 +345,8 @@ void create_wifi_settings_widget(lv_disp_t *disp) {
     lv_textarea_set_password_mode(password_textarea, true);
     lv_textarea_set_placeholder_text(password_textarea, "Ingrese contraseña");
     lv_obj_set_width(password_textarea, 200);
+    // Vincular evento para abrir el teclado al enfocar
+    lv_obj_add_event_cb(password_textarea, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
 
     // Botón de escaneo
     lv_obj_t *scan_btn = lv_btn_create(container);
@@ -243,13 +365,6 @@ void create_wifi_settings_widget(lv_disp_t *disp) {
     lv_obj_add_event_cb(connect_btn, connect_button_event_handler, LV_EVENT_CLICKED, password_textarea);
 }
 
-void initialize_wifi_event_loop() {
-    static bool initialized = false;
-    if (!initialized) {
-        ESP_ERROR_CHECK(esp_event_loop_create_default());
-        initialized = true;
-    }
-}
 
 
 
@@ -262,50 +377,14 @@ void initialize_wifi_event_loop() {
 
 
 
-static lv_obj_t *prev_screen;
-static lv_obj_t *keyboard;
 
-static void keyboard_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *keyboard = lv_event_get_target(event);
 
-    if (code == LV_EVENT_CANCEL || code == LV_EVENT_READY) {
-        lv_obj_t *textarea = lv_keyboard_get_textarea(keyboard);
 
-        if (textarea) {
-            // Procesar el texto si es necesario
-            const char *text = lv_textarea_get_text(textarea);
-            printf("Texto guardado: %s\n", text);
-        }
 
-        // Ocultar teclado sin eliminarlo
-        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-    }
-}
 
-static void textarea_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *textarea = lv_event_get_target(event);
 
-    if (code == LV_EVENT_FOCUSED) {
-        if (!keyboard) {
-            // Crear teclado si no existe
-            keyboard = lv_keyboard_create(lv_scr_act());
-            lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
-        }
 
-        // Asociar el teclado al textarea y mostrarlo
-        lv_keyboard_set_textarea(keyboard, textarea);
-        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-    }
-}
 
-static void back_button_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    if (code == LV_EVENT_CLICKED) {
-        lv_disp_load_scr(prev_screen);
-    }
-}
 
 
 
@@ -353,22 +432,6 @@ static void back_button_event_handler(lv_event_t *event) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-extern void example_lvgl_demo_ui(lv_disp_t *disp);
 
 static bool example_on_vsync_event(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *event_data, void *user_data)
 {
@@ -388,10 +451,7 @@ static void example_lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
-#if CONFIG_EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
-    xSemaphoreGive(sem_gui_ready);
-    xSemaphoreTake(sem_vsync_end, portMAX_DELAY);
-#endif
+
     // pass the draw buffer to the driver
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
     lv_disp_flush_ready(drv);
@@ -471,7 +531,6 @@ void gpio_init(void)
     gpio_config(&io_conf);
 }
 
-// extern lv_obj_t *scr;
 static void example_lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 {
     uint16_t touchpad_x[1] = {0};
@@ -496,6 +555,10 @@ void app_main(void)
 {
     // Initialize NVS
     init_nvs();
+
+    // Inicializar Wi-Fi
+    ESP_LOGI(TAG, "Inicializando Wi-Fi...");
+    initialize_wifi_event_loop();
     
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
@@ -523,22 +586,15 @@ void app_main(void)
 
     start_lvgl_task(disp, tp);
 
-    // Lock the mutex due to the LVGL APIs are not thread-safe
+    ESP_LOGI(TAG, "Sistema inicializado. Interfaz lista.");
+
+
     if (example_lvgl_lock(-1)) {
-        // example_lvgl_demo_ui(disp);
-        //lv_demo_widgets();
-        //create_touch_widget(disp);
         create_wifi_settings_widget(disp);
-        // lv_demo_benchmark();
-        // lv_demo_music();
-        // lv_demo_stress();
-        // Release the mutex
         example_lvgl_unlock();
     }
-    wifi_scan();
 
-    ESP_LOGI(TAG, "Start LVGL task");
-    //xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
+
 }
 
 
@@ -772,6 +828,30 @@ void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_d
 
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(panel_handle, &cbs, disp_drv));
 }
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void initialize_wifi_event_loop(void) {
+    static bool initialized = false;
+    if (!initialized) {
+        // Inicializa la capa de red
+        ESP_ERROR_CHECK(esp_netif_init());
+        ESP_ERROR_CHECK(esp_event_loop_create_default()); // Crea el loop de eventos por defecto
 
+        // Crea la interfaz de red Wi-Fi para modo STA (estación)
+        esp_netif_create_default_wifi_sta();
+
+        // Inicializar el Wi-Fi
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+        // Configurar Wi-Fi en modo estación
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+
+        // Arrancar Wi-Fi
+        ESP_ERROR_CHECK(esp_wifi_start());
+
+        initialized = true;
+        ESP_LOGI(TAG, "Wi-Fi inicializado y en modo estación.");
+    }
+}
 
 
