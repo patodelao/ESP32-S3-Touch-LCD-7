@@ -40,6 +40,23 @@
 
 static const char *TAG = "example";
 
+
+
+
+// Declaraciones de funciones de inicialización del sistema
+void init_nvs();
+esp_lcd_panel_handle_t init_lcd_panel();
+void init_i2c();
+esp_lcd_touch_handle_t init_touch(esp_lcd_panel_handle_t panel_handle);
+lv_disp_t *init_lvgl(esp_lcd_panel_handle_t panel_handle);
+void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp);
+void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_drv_t *disp_drv);
+
+
+
+
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////// Please update the following configuration according to your LCD spec //////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -99,20 +116,6 @@ static lv_obj_t *ssid_dropdown;
 
 
 
-static void button_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *button = lv_event_get_target(event);
-    lv_obj_t *label = lv_obj_get_child(button, 0);
-
-    if (code == LV_EVENT_CLICKED) {
-        const char *text = lv_label_get_text(label);
-        if (strcmp(text, "Presionado") == 0) {
-            lv_label_set_text(label, "No presionado");
-        } else {
-            lv_label_set_text(label, "Presionado");
-        }
-    }
-}
 
 #define MAX_NETWORKS 5
 static wifi_ap_record_t top_networks[MAX_NETWORKS];
@@ -494,171 +497,32 @@ static void example_lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 void app_main(void)
 {
     // Initialize NVS
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
+    init_nvs();
     
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
 
-#if CONFIG_EXAMPLE_AVOID_TEAR_EFFECT_WITH_SEM
-    ESP_LOGI(TAG, "Create semaphores");
-    sem_vsync_end = xSemaphoreCreateBinary();
-    assert(sem_vsync_end);
-    sem_gui_ready = xSemaphoreCreateBinary();
-    assert(sem_gui_ready);
-#endif
+    // Initialize the LCD panel
+    esp_lcd_panel_handle_t panel_handle = init_lcd_panel();
 
-#if EXAMPLE_PIN_NUM_BK_LIGHT >= 0
-    ESP_LOGI(TAG, "Turn off LCD backlight");
-    gpio_config_t bk_gpio_config = {
-        .mode = GPIO_MODE_OUTPUT,
-        .pin_bit_mask = 1ULL << EXAMPLE_PIN_NUM_BK_LIGHT
-    };
-    ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
-#endif
 
-    ESP_LOGI(TAG, "Install RGB LCD panel driver");
-    esp_lcd_panel_handle_t panel_handle = NULL;
-    esp_lcd_rgb_panel_config_t panel_config = {
-        .data_width = 16, // RGB565 in parallel mode, thus 16bit in width
-        .psram_trans_align = 64,
-        .num_fbs = EXAMPLE_LCD_NUM_FB,
-#if CONFIG_EXAMPLE_USE_BOUNCE_BUFFER
-        .bounce_buffer_size_px = 10 * EXAMPLE_LCD_H_RES,
-#endif
-        .clk_src = LCD_CLK_SRC_DEFAULT,
-        .disp_gpio_num = EXAMPLE_PIN_NUM_DISP_EN,
-        .pclk_gpio_num = EXAMPLE_PIN_NUM_PCLK,
-        .vsync_gpio_num = EXAMPLE_PIN_NUM_VSYNC,
-        .hsync_gpio_num = EXAMPLE_PIN_NUM_HSYNC,
-        .de_gpio_num = EXAMPLE_PIN_NUM_DE,
-        .data_gpio_nums = {
-            EXAMPLE_PIN_NUM_DATA0,
-            EXAMPLE_PIN_NUM_DATA1,
-            EXAMPLE_PIN_NUM_DATA2,
-            EXAMPLE_PIN_NUM_DATA3,
-            EXAMPLE_PIN_NUM_DATA4,
-            EXAMPLE_PIN_NUM_DATA5,
-            EXAMPLE_PIN_NUM_DATA6,
-            EXAMPLE_PIN_NUM_DATA7,
-            EXAMPLE_PIN_NUM_DATA8,
-            EXAMPLE_PIN_NUM_DATA9,
-            EXAMPLE_PIN_NUM_DATA10,
-            EXAMPLE_PIN_NUM_DATA11,
-            EXAMPLE_PIN_NUM_DATA12,
-            EXAMPLE_PIN_NUM_DATA13,
-            EXAMPLE_PIN_NUM_DATA14,
-            EXAMPLE_PIN_NUM_DATA15,
-        },
-        .timings = {
-            .pclk_hz = EXAMPLE_LCD_PIXEL_CLOCK_HZ,
-            .h_res = EXAMPLE_LCD_H_RES,
-            .v_res = EXAMPLE_LCD_V_RES,
-            // The following parameters should refer to LCD spec
-            .hsync_back_porch = 40,  // Margen posterior horizontal
-        .hsync_front_porch = 20, // Margen anterior horizontal
-        .hsync_pulse_width = 4,  // Ancho del pulso HSYNC
-        .vsync_back_porch = 8,   // Margen posterior vertical
-        .vsync_front_porch = 8,  // Margen anterior vertical
-        .vsync_pulse_width = 4,  // Ancho del pulso VSYNC
-        .flags.pclk_active_neg = true,
-    },
-        .flags.fb_in_psram = true, // allocate frame buffer in PSRAM
-    };
-    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &panel_handle));
+    // Register event callbacks
+    register_lcd_event_callbacks(panel_handle, &disp_drv);
 
-    ESP_LOGI(TAG, "Register event callbacks");
-    esp_lcd_rgb_panel_event_callbacks_t cbs = {
-        .on_vsync = example_on_vsync_event,
-    };
-    ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(panel_handle, &cbs, &disp_drv));
+    // Initialize I2C
+    init_i2c();
 
-    ESP_LOGI(TAG, "Initialize RGB LCD panel");
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    // Initialize GPIO
+    gpio_init();    
 
-#if EXAMPLE_PIN_NUM_BK_LIGHT >= 0
-    ESP_LOGI(TAG, "Turn on LCD backlight");
-    gpio_set_level(EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
-#endif
 
-    ESP_ERROR_CHECK(i2c_master_init());
-    ESP_LOGI(TAG, "I2C initialized successfully");
-    gpio_init();
+    // Initialize touch controller
+    esp_lcd_touch_handle_t tp = init_touch(panel_handle);
 
-    uint8_t write_buf = 0x01;
-    i2c_master_write_to_device(I2C_MASTER_NUM, 0x24, &write_buf, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+  
+    // Initialize LVGL
+    lv_disp_t *disp = init_lvgl(panel_handle);
 
-    //Reset the touch screen. It is recommended that you reset the touch screen before using it.
-    write_buf = 0x2C;
-    i2c_master_write_to_device(I2C_MASTER_NUM, 0x38, &write_buf, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    esp_rom_delay_us(100 * 1000);
-
-    gpio_set_level(GPIO_INPUT_IO_4,0);
-    esp_rom_delay_us(100 * 1000);
-
-    write_buf = 0x2E;
-    i2c_master_write_to_device(I2C_MASTER_NUM, 0x38, &write_buf, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
-    esp_rom_delay_us(200 * 1000);
-    
-    esp_lcd_touch_handle_t tp = NULL;
-    esp_lcd_panel_io_handle_t tp_io_handle = NULL;
-
-    ESP_LOGI(TAG, "Initialize I2C");
-
-    esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
-
-    ESP_LOGI(TAG, "Initialize touch IO (I2C)");
-    /* Touch IO handle */
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)I2C_MASTER_NUM, &tp_io_config, &tp_io_handle));
-    esp_lcd_touch_config_t tp_cfg = {
-        .x_max = EXAMPLE_LCD_V_RES,
-        .y_max = EXAMPLE_LCD_H_RES,
-        .rst_gpio_num = -1,
-        .int_gpio_num = -1,
-        .flags = {
-            .swap_xy = 0,
-            .mirror_x = 0,
-            .mirror_y = 0,
-        },
-    };
-    /* Initialize touch */
-    ESP_LOGI(TAG, "Initialize touch controller GT911");
-    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(tp_io_handle, &tp_cfg, &tp));
-
-    ESP_LOGI(TAG, "Initialize LVGL library");
-    lv_init();
-    void *buf1 = NULL;
-    void *buf2 = NULL;
-#if CONFIG_EXAMPLE_DOUBLE_FB
-    ESP_LOGI(TAG, "Use frame buffers as LVGL draw buffers");
-    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 2, &buf1, &buf2));
-    // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES);
-#else
-    ESP_LOGI(TAG, "Allocate separate LVGL draw buffers from PSRAM");
-    buf1 = heap_caps_malloc(EXAMPLE_LCD_H_RES * 100 * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
-    assert(buf1);
-    // initialize LVGL draw buffers
-    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, EXAMPLE_LCD_H_RES * 100);
-#endif // CONFIG_EXAMPLE_DOUBLE_FB
-
-    ESP_LOGI(TAG, "Register display driver to LVGL");
-    lv_disp_drv_init(&disp_drv);
-    disp_drv.hor_res = EXAMPLE_LCD_H_RES;
-    disp_drv.ver_res = EXAMPLE_LCD_V_RES;
-    disp_drv.flush_cb = example_lvgl_flush_cb;
-    disp_drv.draw_buf = &disp_buf;
-    disp_drv.user_data = panel_handle;
-#if CONFIG_EXAMPLE_DOUBLE_FB
-    disp_drv.full_refresh = true; // the full_refresh mode can maintain the synchronization between the two frame buffers
-#endif
-    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
 
     ESP_LOGI(TAG, "Install LVGL tick timer");
     // Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
@@ -703,3 +567,223 @@ void app_main(void)
     ESP_LOGI(TAG, "Start LVGL task");
     xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void init_nvs()
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "NVS initialized successfully");
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+esp_lcd_panel_handle_t init_lcd_panel()
+{
+    ESP_LOGI(TAG, "Installing RGB LCD panel driver");
+    esp_lcd_panel_handle_t panel_handle = NULL;
+    esp_lcd_rgb_panel_config_t panel_config = {
+        // Configuración del panel LCD
+        .data_width = 16,
+        .psram_trans_align = 64,
+        .num_fbs = EXAMPLE_LCD_NUM_FB,
+        .clk_src = LCD_CLK_SRC_DEFAULT,
+        .disp_gpio_num = EXAMPLE_PIN_NUM_DISP_EN,
+        .pclk_gpio_num = EXAMPLE_PIN_NUM_PCLK,
+        .vsync_gpio_num = EXAMPLE_PIN_NUM_VSYNC,
+        .hsync_gpio_num = EXAMPLE_PIN_NUM_HSYNC,
+        .de_gpio_num = EXAMPLE_PIN_NUM_DE,
+        .data_gpio_nums = {
+            EXAMPLE_PIN_NUM_DATA0,
+            EXAMPLE_PIN_NUM_DATA1,
+            EXAMPLE_PIN_NUM_DATA2,
+            EXAMPLE_PIN_NUM_DATA3,
+            EXAMPLE_PIN_NUM_DATA4,
+            EXAMPLE_PIN_NUM_DATA5,
+            EXAMPLE_PIN_NUM_DATA6,
+            EXAMPLE_PIN_NUM_DATA7,
+            EXAMPLE_PIN_NUM_DATA8,
+            EXAMPLE_PIN_NUM_DATA9,
+            EXAMPLE_PIN_NUM_DATA10,
+            EXAMPLE_PIN_NUM_DATA11,
+            EXAMPLE_PIN_NUM_DATA12,
+            EXAMPLE_PIN_NUM_DATA13,
+            EXAMPLE_PIN_NUM_DATA14,
+            EXAMPLE_PIN_NUM_DATA15,
+        },
+        .timings = {
+            .pclk_hz = EXAMPLE_LCD_PIXEL_CLOCK_HZ,
+            .h_res = EXAMPLE_LCD_H_RES,
+            .v_res = EXAMPLE_LCD_V_RES,
+            // The following parameters should refer to LCD spec
+            .hsync_back_porch = 40,  // Margen posterior horizontal
+        .hsync_front_porch = 20, // Margen anterior horizontal
+        .hsync_pulse_width = 4,  // Ancho del pulso HSYNC
+        .vsync_back_porch = 8,   // Margen posterior vertical
+        .vsync_front_porch = 8,  // Margen anterior vertical
+        .vsync_pulse_width = 4,  // Ancho del pulso VSYNC
+        .flags.pclk_active_neg = true,
+    },
+        .flags.fb_in_psram = true, // allocate frame buffer in PSRAM
+    };
+    ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&panel_config, &panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+    ESP_LOGI(TAG, "LCD panel initialized successfully");
+    return panel_handle;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void init_i2c()
+{
+    ESP_LOGI(TAG, "Initializing I2C");
+    ESP_ERROR_CHECK(i2c_master_init());
+    ESP_LOGI(TAG, "I2C initialized successfully");
+    
+    uint8_t write_buf = 0x01;
+    i2c_master_write_to_device(I2C_MASTER_NUM, 0x24, &write_buf, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+
+    //Reset the touch screen. It is recommended that you reset the touch screen before using it.
+    write_buf = 0x2C;
+    i2c_master_write_to_device(I2C_MASTER_NUM, 0x38, &write_buf, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+    esp_rom_delay_us(100 * 1000);
+
+    gpio_set_level(GPIO_INPUT_IO_4,0);
+    esp_rom_delay_us(100 * 1000);
+
+    write_buf = 0x2E;
+    i2c_master_write_to_device(I2C_MASTER_NUM, 0x38, &write_buf, 1, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+    esp_rom_delay_us(200 * 1000);
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+esp_lcd_touch_handle_t init_touch(esp_lcd_panel_handle_t panel_handle)
+{
+    ESP_LOGI(TAG, "Initializing touch controller GT911");
+    esp_lcd_touch_handle_t tp = NULL;
+    esp_lcd_panel_io_handle_t tp_io_handle = NULL;
+
+    esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_GT911_CONFIG();
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)I2C_MASTER_NUM, &tp_io_config, &tp_io_handle));
+
+    esp_lcd_touch_config_t tp_cfg = {
+        .x_max = EXAMPLE_LCD_V_RES,
+        .y_max = EXAMPLE_LCD_H_RES,
+        .rst_gpio_num = -1,
+        .int_gpio_num = -1,
+    };
+
+    ESP_ERROR_CHECK(esp_lcd_touch_new_i2c_gt911(tp_io_handle, &tp_cfg, &tp));
+    return tp;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+lv_disp_t *init_lvgl(esp_lcd_panel_handle_t panel_handle)
+{
+    ESP_LOGI(TAG, "Initializing LVGL");
+    lv_init();
+    static lv_disp_draw_buf_t disp_buf;
+    static lv_disp_drv_t disp_drv;
+
+    void *buf1 = heap_caps_malloc(EXAMPLE_LCD_H_RES * 100 * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+    assert(buf1);
+
+    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, EXAMPLE_LCD_H_RES * 100);
+    lv_disp_drv_init(&disp_drv);
+
+    disp_drv.hor_res = EXAMPLE_LCD_H_RES;
+    disp_drv.ver_res = EXAMPLE_LCD_V_RES;
+    disp_drv.flush_cb = example_lvgl_flush_cb;
+    disp_drv.draw_buf = &disp_buf;
+    disp_drv.user_data = panel_handle;
+
+    lv_disp_t *disp = lv_disp_drv_register(&disp_drv);
+    return disp;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp)
+{
+    ESP_LOGI(TAG, "Creating LVGL task");
+    static lv_indev_drv_t indev_drv;
+
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_POINTER;
+    indev_drv.read_cb = example_lvgl_touch_cb;
+    indev_drv.user_data = tp;
+
+    lv_indev_drv_register(&indev_drv);
+
+    xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_drv_t *disp_drv)
+{
+    ESP_LOGI(TAG, "Register event callbacks");
+
+    esp_lcd_rgb_panel_event_callbacks_t cbs = {
+        .on_vsync = example_on_vsync_event,
+    };
+
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(panel_handle, &cbs, disp_drv));
+}
+
+
+
