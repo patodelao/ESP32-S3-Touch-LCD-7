@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "rgb_panel",
-    "project_version":    "eea01f51-dirty",
+    "project_version":    "714c3296-dirty",
     "project_path":       "C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/EjemploFuncional_2",
     "idf_path":           "C:/Users/patricio.delao/esp/v5.3.2/esp-idf",
     "build_dir":          "C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/EjemploFuncional_2/build",

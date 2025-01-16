@@ -225,7 +225,9 @@ void install_lvgl_tick_timer(void)
 void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp)
 {
     ESP_LOGI(TAG, "Creating LVGL task");
-    static lv_indev_drv_t indev_drv;
+
+    // Crear y registrar el dispositivo de entrada (Touch)
+    static lv_indev_drv_t indev_drv;    // Input device driver (Touch)
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.disp = disp;
@@ -234,5 +236,13 @@ void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp)
 
     lv_indev_drv_register(&indev_drv);
 
-    xTaskCreate(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, NULL, EXAMPLE_LVGL_TASK_PRIORITY, NULL);
+    esp_timer_handle_t lvgl_tick_timer = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
+
+    lvgl_mux = xSemaphoreCreateRecursiveMutex();
+    assert(lvgl_mux);
+    ESP_LOGI(TAG, "Create LVGL task");
+    xTaskCreatePinnedToCore(example_lvgl_port_task, "LVGL", EXAMPLE_LVGL_TASK_STACK_SIZE, disp, EXAMPLE_LVGL_TASK_PRIORITY, NULL, 0);
+    ESP_LOGI(TAG, "LVGL task created successfully");
 }
