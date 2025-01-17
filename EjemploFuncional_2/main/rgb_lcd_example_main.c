@@ -214,6 +214,7 @@ static void wifi_scan_task(void *param) {
 
 
 static lv_obj_t *floating_msgbox = NULL;
+static lv_obj_t *success_msgbox = NULL;
 
 // Función para eliminar el mensaje flotante
 static void remove_floating_msgbox(lv_event_t *event) {
@@ -233,6 +234,7 @@ static void scan_button_event_handler(lv_event_t *event) {
         ESP_LOGW(TAG, "Escaneo ya en curso...");
     }
 }
+
 static void connect_button_event_handler(lv_event_t *event) {
     char selected_ssid[33];
     lv_dropdown_get_selected_str(ssid_dropdown, selected_ssid, sizeof(selected_ssid));
@@ -250,7 +252,7 @@ static void connect_button_event_handler(lv_event_t *event) {
         return;
     }
 
-    // Validar que se haya ingresado una contraseña válida
+    // Validar que se haya ingresado una contraseña (si es necesario)
     if (strlen(password) == 0 || strlen(password) < 8) {
         ESP_LOGW(TAG, "No se ingresó una contraseña válida.");
         if (example_lvgl_lock(-1)) {
@@ -263,28 +265,47 @@ static void connect_button_event_handler(lv_event_t *event) {
 
     ESP_LOGI(TAG, "Intentando conectar a SSID: %s con contraseña: %s", selected_ssid, password);
 
-    // Crear un mensaje flotante mientras se realiza la conexión
+    // Mostrar mensaje flotante de conexión en proceso
     if (example_lvgl_lock(-1)) {
         floating_msgbox = lv_msgbox_create(NULL, "Conexión en proceso", "Conectando a la red...", NULL, true);
         lv_obj_center(floating_msgbox);
         example_lvgl_unlock();
     }
 
-    // Configurar Wi-Fi
-    wifi_config_t *wifi_config = malloc(sizeof(wifi_config_t));
-    if (!wifi_config) {
-        ESP_LOGE(TAG, "Fallo al asignar memoria para la configuración Wi-Fi");
-        return;
+    // Configura la red Wi-Fi
+    wifi_config_t wifi_config = {
+        .sta = {
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+    strncpy((char *)wifi_config.sta.ssid, selected_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err == ESP_OK) {
+        err = esp_wifi_connect();
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Conexión exitosa.");
+            if (example_lvgl_lock(-1)) {
+                success_msgbox = lv_msgbox_create(NULL, "Conexión Exitosa", "Conexión establecida correctamente.", NULL, true);
+                lv_obj_align(success_msgbox, LV_ALIGN_CENTER, 0, -50); // Ubicar encima del mensaje "Conexión en proceso"
+                example_lvgl_unlock();
+            }
+        }
     }
 
-    memset(wifi_config, 0, sizeof(wifi_config_t));
-    strncpy((char *)wifi_config->sta.ssid, selected_ssid, sizeof(wifi_config->sta.ssid));
-    strncpy((char *)wifi_config->sta.password, password, sizeof(wifi_config->sta.password));
-    wifi_config->sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-
-    // Crear tarea para realizar la conexión en Core 0
-    xTaskCreatePinnedToCore(wifi_connect_task, "wifi_connect_task", 4096, wifi_config, 5, NULL, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error al iniciar la conexión Wi-Fi: %s", esp_err_to_name(err));
+        if (example_lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo iniciar la conexión Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            example_lvgl_unlock();
+        }
+    }
 }
+
+
+
 // Nueva función para manejar la desconexión
 static void disconnect_button_event_handler(lv_event_t *event) {
     esp_err_t err = esp_wifi_disconnect();
