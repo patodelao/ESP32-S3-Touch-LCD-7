@@ -437,6 +437,8 @@ void create_wifi_settings_widget(lv_disp_t *disp) {
 
 // Función para inicializar UART
 static void init_uart(void) {
+    ESP_LOGI(TAG, "Inicializando UART %d", UART_NUM);
+
     const uart_config_t uart_config = {
         .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
@@ -447,15 +449,28 @@ static void init_uart(void) {
     uart_param_config(UART_NUM, &uart_config);
     uart_set_pin(UART_NUM, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
     uart_driver_install(UART_NUM, UART_BUFFER_SIZE, UART_BUFFER_SIZE, 0, NULL, 0);
+    ESP_LOGI(TAG, "UART inicializado %d", UART_NUM);
+
+    
 }
 
 // Función para enviar el mensaje ingresado
 static void send_message(lv_event_t *e) {
+    if (input_textarea == NULL) {
+        ESP_LOGE(TAG, "Error: input_textarea no está inicializado.");
+        return; // Salir si no está inicializado
+    }
+
     const char *text = lv_textarea_get_text(input_textarea);
 
     if (strlen(text) == 0) {
-        return; // No enviar si el campo está vacío
+    if (example_lvgl_lock(-1)) {
+        lv_obj_t *msgbox = lv_msgbox_create(NULL, "Advertencia", "El campo de texto está vacío.", NULL, true);
+        lv_obj_center(msgbox);
+        example_lvgl_unlock();
     }
+    return; // Detener ejecución
+}
 
     // Mostrar el mensaje enviado en la etiqueta
     lv_label_set_text(sent_label, text);
@@ -485,46 +500,55 @@ static void uart_receive_task(void *param) {
 }
 
 // Crear la interfaz gráfica
+// Crear la interfaz de chat
 void create_chat_interface(lv_disp_t *disp) {
     // Crear la pantalla principal
     lv_obj_t *scr = lv_disp_get_scr_act(disp);
 
-    // Contenedor para mensajes
+    // Contenedor para mensajes (opcional, dependiendo del diseño)
     chat_container = lv_obj_create(scr);
     lv_obj_set_size(chat_container, lv_pct(100), lv_pct(70));
-    lv_obj_align(chat_container, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_align(chat_container, LV_ALIGN_TOP_MID, 0, 10);
     lv_obj_set_style_pad_all(chat_container, 10, LV_PART_MAIN);
     lv_obj_set_scroll_dir(chat_container, LV_DIR_VER);
     lv_obj_set_style_bg_color(chat_container, lv_color_hex(0xF0F0F0), LV_PART_MAIN);
     lv_obj_set_style_radius(chat_container, 10, LV_PART_MAIN);
 
     // Área de entrada de texto
-    message_area = lv_textarea_create(scr);
-    lv_textarea_set_one_line(message_area, true);
-    lv_textarea_set_placeholder_text(message_area, "Escribe tu mensaje");
-    lv_obj_set_size(message_area, lv_pct(80), LV_SIZE_CONTENT);
-    lv_obj_align(message_area, LV_ALIGN_BOTTOM_LEFT, 10, -10);
+    input_textarea = lv_textarea_create(scr); // Asignar a la variable global
+    if (!input_textarea) {
+        ESP_LOGE(TAG, "Error al crear input_textarea");
+        return;
+    }
+
+    lv_textarea_set_one_line(input_textarea, true);
+    lv_textarea_set_placeholder_text(input_textarea, "Escribe tu mensaje");
+    lv_obj_set_size(input_textarea, lv_pct(80), LV_SIZE_CONTENT);
+    lv_obj_align(input_textarea, LV_ALIGN_BOTTOM_MID, -30, -40); // Mover más arriba y centrar
+
+    // Asociar un evento para mostrar el teclado al tocar el campo de texto
+    lv_obj_add_event_cb(input_textarea, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
 
     // Botón para enviar mensajes
     lv_obj_t *send_btn = lv_btn_create(scr);
     lv_obj_set_size(send_btn, 60, 40);
-    lv_obj_align_to(send_btn, message_area, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
+    lv_obj_align_to(send_btn, input_textarea, LV_ALIGN_OUT_RIGHT_MID, 10, 0);
     lv_obj_t *send_label = lv_label_create(send_btn);
     lv_label_set_text(send_label, "Enviar");
     lv_obj_center(send_label);
 
+    // Asociar la función de evento al botón
     lv_obj_add_event_cb(send_btn, send_message, LV_EVENT_CLICKED, NULL);
 
-    // Crear teclado
+    // Crear teclado y asociarlo al campo de texto
     keyboard = lv_keyboard_create(scr);
     lv_obj_set_size(keyboard, lv_pct(100), lv_pct(25));
-    lv_keyboard_set_textarea(keyboard, message_area);
+    lv_keyboard_set_textarea(keyboard, input_textarea);
     lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
+
+    // Ocultar el teclado inicialmente
+    lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
 }
-
-
-
-
 
 
 
@@ -751,6 +775,9 @@ void app_main(void)
 {
     // Initialize NVS
     init_nvs();
+
+    // Inicializar UART
+    init_uart();
 
     // Inicializar Wi-Fi
     ESP_LOGI(TAG, "Inicializando Wi-Fi...");
