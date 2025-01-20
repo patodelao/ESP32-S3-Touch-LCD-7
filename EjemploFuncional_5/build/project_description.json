@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "rgb_panel",
-    "project_version":    "e6c67f7b-dirty",
+    "project_version":    "07c89e4c-dirty",
     "project_path":       "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_5",
     "idf_path":           "C:/Users/alons/esp/v5.4/esp-idf",
     "build_dir":          "C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/EjemploFuncional_5/build",
