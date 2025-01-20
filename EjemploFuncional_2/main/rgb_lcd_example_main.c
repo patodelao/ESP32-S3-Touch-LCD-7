@@ -550,7 +550,6 @@ static void example_lvgl_port_task(void *arg)
 }
 
 
-
 static esp_err_t i2c_master_init(void)
 {
     int i2c_master_port = I2C_MASTER_NUM;
@@ -604,6 +603,9 @@ static void example_lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
         data->state = LV_INDEV_STATE_REL;
     }
 }
+
+
+
 void app_main(void)
 {
     // Initialize NVS
@@ -640,7 +642,6 @@ void app_main(void)
     start_lvgl_task(disp, tp);
 
     ESP_LOGI(TAG, "Sistema inicializado. Interfaz lista.");
-
 
     if (example_lvgl_lock(-1)) {
         create_wifi_settings_widget(disp);

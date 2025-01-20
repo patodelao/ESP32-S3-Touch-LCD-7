@@ -1,0 +1,38 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include "esp_err.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_touch.h"
+#include "lvgl.h"
+
+// Define tus pines y configuraciones aquí
+#define EXAMPLE_PIN_NUM_DISP_EN 18
+#define EXAMPLE_PIN_NUM_PCLK 19
+#define EXAMPLE_PIN_NUM_VSYNC 20
+#define EXAMPLE_PIN_NUM_HSYNC 21
+#define EXAMPLE_PIN_NUM_DE 22
+
+#define EXAMPLE_PIN_NUM_DATA0 23
+#define EXAMPLE_PIN_NUM_DATA1 24
+#define EXAMPLE_PIN_NUM_DATA2 25
+#define EXAMPLE_PIN_NUM_DATA3 26
+#define EXAMPLE_PIN_NUM_DATA4 27
+#define EXAMPLE_PIN_NUM_DATA5 28
+#define EXAMPLE_PIN_NUM_DATA6 29
+#define EXAMPLE_PIN_NUM_DATA7 30
+#define EXAMPLE_PIN_NUM_DATA8 31
+#define EXAMPLE_PIN_NUM_DATA9 32
+#define EXAMPLE_PIN_NUM_DATA10 33
+#define EXAMPLE_PIN_NUM_DATA11 34
+#define EXAMPLE_PIN_NUM_DATA12 35
+#define EXAMPLE_PIN_NUM_DATA13 36
+#define EXAMPLE_PIN_NUM_DATA14 37
+#define EXAMPLE_PIN_NUM_DATA15 38
+
+#define EXAMPLE_LCD_PIXEL_CLOCK_HZ 8000000
+#define EXAMPLE_LCD_H_RES 800
+#define EXAMPLE_LCD_V_RES 480
+#define EXAMPLE_LCD_NUM_FB 2
+
+#endif // CONFIG_H
