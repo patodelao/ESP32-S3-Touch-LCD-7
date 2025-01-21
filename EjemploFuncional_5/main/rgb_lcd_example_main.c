@@ -496,14 +496,25 @@ static void uart_receive_task(void *param) {
         int len = uart_read_bytes(UART_NUM, data, UART_BUFFER_SIZE - 1, pdMS_TO_TICKS(100));
         if (len > 0) {
             data[len] = '\0'; // Termina la cadena
-            // Envía respuesta
-            uart_write_bytes(UART_NUM, "Mensaje recibido (UART desde el micro): ", 40);
+            ESP_LOGI(TAG, "Mensaje recibido: %s", data);
+
+            // Actualizar la etiqueta con el mensaje recibido
+            if (example_lvgl_lock(-1)) {
+                static char buffer[2048]; // Buffer acumulativo para mostrar todos los mensajes recibidos
+                snprintf(buffer, sizeof(buffer), "%s\n%s", lv_label_get_text(received_label), (const char *)data);
+                lv_label_set_text(received_label, buffer);
+                example_lvgl_unlock();
+            }
+
+            // Enviar respuesta al remitente
+            uart_write_bytes(UART_NUM, "Mensaje recibido: ", 18);
             uart_write_bytes(UART_NUM, (const char *)data, len);
             uart_write_bytes(UART_NUM, "\r\n", 2);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
+
 
 
 
@@ -522,12 +533,12 @@ void create_chat_interface(lv_disp_t *disp) {
     lv_obj_set_style_bg_color(chat_container, lv_color_hex(0xF0F0F0), LV_PART_MAIN);
     lv_obj_set_style_radius(chat_container, 10, LV_PART_MAIN);
 
-    // Crear etiqueta para mensajes enviados
-    sent_label = lv_label_create(chat_container);
-    lv_label_set_text(sent_label, "");
-    lv_obj_align(sent_label, LV_ALIGN_TOP_LEFT, 10, 10);
+    // Área para mostrar mensajes recibidos
+    received_label = lv_label_create(chat_container);
+    lv_label_set_text(received_label, "Mensajes recibidos:\n");
+    lv_obj_align(received_label, LV_ALIGN_TOP_LEFT, 10, 10);
 
-    // Crear campo de texto
+    // Crear campo de texto para ingresar mensajes
     input_textarea = lv_textarea_create(scr);
     lv_textarea_set_one_line(input_textarea, true);
     lv_textarea_set_placeholder_text(input_textarea, "Escribe tu mensaje");
@@ -814,11 +825,11 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Sistema inicializado. Interfaz lista.");
 
-if (example_lvgl_lock(-1)) {
-    lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
-    create_chat_interface(disp);  // Crea el widget UART
-    example_lvgl_unlock();
-}
+    if (example_lvgl_lock(-1)) {
+        lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
+        create_chat_interface(disp);  // Crea el widget UART
+        example_lvgl_unlock();
+    }
 
 
 
