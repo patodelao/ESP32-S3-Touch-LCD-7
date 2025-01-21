@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: CC0-1.0
  */
 
-#include <stdio.h>
+    #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include "sdkconfig.h"
@@ -42,9 +42,9 @@
 
 static const char *TAG = "example";
 
-#define UART_NUM UART_NUM_1
-#define UART_TX_PIN 17
-#define UART_RX_PIN 16
+#define UART_NUM 1  
+#define UART_TX_PIN 43
+#define UART_RX_PIN 44
 #define UART_BUFFER_SIZE 1024
 
 static lv_obj_t *sent_label;
@@ -456,7 +456,6 @@ static void init_uart(void) {
 
 
 // Función para enviar el mensaje ingresado
-// Función para enviar el mensaje ingresado
 static void send_message(lv_event_t *e) {
     // Validar que los objetos estén inicializados
     if (!input_textarea || !sent_label) {
@@ -464,36 +463,28 @@ static void send_message(lv_event_t *e) {
         return; // Salir si los objetos no están listos
     }
 
-    // Obtener el texto ingresado
-    const char *text = lv_textarea_get_text(input_textarea);
-
-    if (!text || strlen(text) == 0) {
+    // Obtener el texto ingresado y guardar una copia
+    const char *textarea_text = lv_textarea_get_text(input_textarea);
+    if (!textarea_text || strlen(textarea_text) == 0) {
         ESP_LOGW(TAG, "El campo de texto está vacío. No se enviará nada.");
         return; // Salir si el campo está vacío
     }
 
-    // Proteger el acceso con bloqueo LVGL
-    if (example_lvgl_lock(-1)) {
-        // Mostrar el mensaje enviado en la etiqueta
-        lv_label_set_text(sent_label, text);
+    char text_to_send[UART_BUFFER_SIZE];
+    strncpy(text_to_send, textarea_text, sizeof(text_to_send) - 1);
+    text_to_send[sizeof(text_to_send) - 1] = '\0'; // Asegurar terminación de cadena
 
-        // Limpiar el campo de texto
-        lv_textarea_set_text(input_textarea, "");
-
-        // Ocultar el teclado si está visible
-        if (keyboard && !lv_obj_has_flag(keyboard, LV_OBJ_FLAG_HIDDEN)) {
-            lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-        }
-
-        example_lvgl_unlock();
-    } else {
-        ESP_LOGE(TAG, "No se pudo obtener el bloqueo para LVGL.");
-    }
+    // Limpiar el campo de texto
+    lv_textarea_set_text(input_textarea, "");
 
     // Enviar el mensaje por UART
-    uart_write_bytes(UART_NUM, text, strlen(text));
-    uart_write_bytes(UART_NUM, "\n", 1); // Agregar nueva línea
-    ESP_LOGI(TAG, "Mensaje enviado: %s", text);
+    uart_write_bytes(UART_NUM, "\r\n", 2); // Agregar salto de línea previo al mensaje
+    int bytes_sent = uart_write_bytes(UART_NUM, text_to_send, strlen(text_to_send));
+    if (bytes_sent > 0) {
+        ESP_LOGI(TAG, "Mensaje enviado por UART: '%s' (%d bytes)", text_to_send, bytes_sent);
+    } else {
+        ESP_LOGE(TAG, "Error al enviar el mensaje por UART");
+    }
 }
 
 
@@ -504,17 +495,21 @@ static void uart_receive_task(void *param) {
     while (1) {
         int len = uart_read_bytes(UART_NUM, data, UART_BUFFER_SIZE - 1, pdMS_TO_TICKS(100));
         if (len > 0) {
-            data[len] = '\0'; // Terminar la cadena
-            if (lv_disp_get_scr_act(NULL) != NULL) {
-                // Actualizar la etiqueta de mensajes recibidos
-                lv_label_set_text(received_label, (char *)data);
-            }
+            data[len] = '\0'; // Termina la cadena
+            // Envía respuesta
+            uart_write_bytes(UART_NUM, "Mensaje recibido (UART desde el micro): ", 40);
+            uart_write_bytes(UART_NUM, (const char *)data, len);
+            uart_write_bytes(UART_NUM, "\r\n", 2);
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
-// Crear la interfaz gráfica
+
+
+
+
+// Crear la interfaz gráfica UART
 void create_chat_interface(lv_disp_t *disp) {
     lv_obj_t *scr = lv_disp_get_scr_act(disp);
 
@@ -782,6 +777,10 @@ void app_main(void)
 
     // Inicializar UART
     init_uart();
+
+    // Iniciar la tarea de recepción UART en el Core 1
+    xTaskCreatePinnedToCore(uart_receive_task, "UART Receive Task", 4096, NULL, 3, NULL, 1);
+
 
     // Inicializar Wi-Fi
     ESP_LOGI(TAG, "Inicializando Wi-Fi...");
