@@ -138,6 +138,11 @@ SemaphoreHandle_t sem_gui_ready;
 static lv_obj_t *ssid_dropdown;
 static TaskHandle_t wifi_scan_task_handle = NULL; // Handle para la tarea de escaneo
 
+static TaskHandle_t uart_receive_task_handle = NULL; // Identificador de la tarea de recepción UART
+
+static QueueHandle_t uart_event_queue;
+static volatile bool uart_listen_enabled = true;
+
 
 
 #define MAX_NETWORKS 5
@@ -448,76 +453,98 @@ static void init_uart(void) {
     };
     uart_param_config(UART_NUM, &uart_config);
     uart_set_pin(UART_NUM, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    uart_driver_install(UART_NUM, UART_BUFFER_SIZE, UART_BUFFER_SIZE, 0, NULL, 0);
+
+    // Instalar el driver UART y crear cola de eventos
+    uart_driver_install(UART_NUM, UART_BUFFER_SIZE, UART_BUFFER_SIZE, 10, &uart_event_queue, 0);
     ESP_LOGI(TAG, "UART inicializado %d", UART_NUM);
-
-    
 }
-
 
 // Función para enviar el mensaje ingresado
 static void send_message(lv_event_t *e) {
     // Validar que los objetos estén inicializados
-    if (!input_textarea || !sent_label) {
-        ESP_LOGE(TAG, "input_textarea o sent_label no están inicializados.");
-        return; // Salir si los objetos no están listos
+    if (!input_textarea) {
+        ESP_LOGE(TAG, "input_textarea no está inicializado.");
+        return;
     }
 
-    // Obtener el texto ingresado y guardar una copia
+    // Obtener el texto ingresado
     const char *textarea_text = lv_textarea_get_text(input_textarea);
     if (!textarea_text || strlen(textarea_text) == 0) {
         ESP_LOGW(TAG, "El campo de texto está vacío. No se enviará nada.");
-        return; // Salir si el campo está vacío
+        return;
     }
 
-    char text_to_send[UART_BUFFER_SIZE];
-    strncpy(text_to_send, textarea_text, sizeof(text_to_send) - 1);
-    text_to_send[sizeof(text_to_send) - 1] = '\0'; // Asegurar terminación de cadena
+    // Pausar la recepción UART mientras se envía
+    if (uart_receive_task_handle != NULL) {
+        vTaskSuspend(uart_receive_task_handle);
+    }
+
+    // Enviar el mensaje por UART
+    int bytes_sent = uart_write_bytes(UART_NUM, textarea_text, strlen(textarea_text));
+    uart_write_bytes(UART_NUM, "\r\n", 2); // Agregar salto de línea
+    if (bytes_sent > 0) {
+        ESP_LOGI(TAG, "Mensaje enviado por UART: '%s'", textarea_text);
+    } else {
+        ESP_LOGE(TAG, "Error al enviar el mensaje por UART");
+    }
 
     // Limpiar el campo de texto
     lv_textarea_set_text(input_textarea, "");
 
-    // Enviar el mensaje por UART
-    uart_write_bytes(UART_NUM, "\r\n", 2); // Agregar salto de línea previo al mensaje
-    int bytes_sent = uart_write_bytes(UART_NUM, text_to_send, strlen(text_to_send));
-    if (bytes_sent > 0) {
-        ESP_LOGI(TAG, "Mensaje enviado por UART: '%s' (%d bytes)", text_to_send, bytes_sent);
-    } else {
-        ESP_LOGE(TAG, "Error al enviar el mensaje por UART");
+    // Reanudar la recepción UART
+    if (uart_receive_task_handle != NULL) {
+        vTaskResume(uart_receive_task_handle);
     }
 }
-
-
 
 // Tarea para recibir mensajes por UART
 static void uart_receive_task(void *param) {
+    uart_event_t event;
     uint8_t data[UART_BUFFER_SIZE];
+
     while (1) {
-        int len = uart_read_bytes(UART_NUM, data, UART_BUFFER_SIZE - 1, pdMS_TO_TICKS(100));
-        if (len > 0) {
-            data[len] = '\0'; // Termina la cadena
-            ESP_LOGI(TAG, "Mensaje recibido: %s", data);
+        // Espera a que ocurra un evento en UART
+        if (xQueueReceive(uart_event_queue, (void *)&event, portMAX_DELAY)) {
+            switch (event.type) {
+                case UART_DATA: {
+                    int len = uart_read_bytes(UART_NUM, data, event.size, pdMS_TO_TICKS(100));
+                    if (len > 0) {
+                        data[len] = '\0'; // Asegurar terminación de cadena
+                        ESP_LOGI(TAG, "Mensaje recibido: %s", data);
 
-            // Actualizar la etiqueta con el mensaje recibido
-            if (example_lvgl_lock(-1)) {
-                static char buffer[2048]; // Buffer acumulativo para mostrar todos los mensajes recibidos
-                snprintf(buffer, sizeof(buffer), "%s\n%s", lv_label_get_text(received_label), (const char *)data);
-                lv_label_set_text(received_label, buffer);
-                example_lvgl_unlock();
+                        // Actualizar la interfaz gráfica
+                        if (example_lvgl_lock(-1)) {
+                            static char buffer[2048]; // Buffer acumulativo para mensajes
+                            snprintf(buffer, sizeof(buffer), "%s\n%s", lv_label_get_text(received_label), (const char *)data);
+                            lv_label_set_text(received_label, buffer);
+                            example_lvgl_unlock();
+                        }
+                    }
+                    break;
+                }
+                case UART_FIFO_OVF:
+                    ESP_LOGW(TAG, "FIFO Overflow!");
+                    uart_flush_input(UART_NUM);
+                    xQueueReset(uart_event_queue);
+                    break;
+                case UART_BUFFER_FULL:
+                    ESP_LOGW(TAG, "Ring Buffer Full!");
+                    uart_flush_input(UART_NUM);
+                    xQueueReset(uart_event_queue);
+                    break;
+                case UART_PARITY_ERR:
+                    ESP_LOGW(TAG, "Parity Error!");
+                    break;
+                case UART_FRAME_ERR:
+                    ESP_LOGW(TAG, "Frame Error!");
+                    break;
+                default:
+                    ESP_LOGI(TAG, "Evento UART no manejado: %d", event.type);
+                    break;
             }
-
-            // Enviar respuesta al remitente
-            uart_write_bytes(UART_NUM, "Mensaje recibido: ", 18);
-            uart_write_bytes(UART_NUM, (const char *)data, len);
-            uart_write_bytes(UART_NUM, "\r\n", 2);
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-
-
-
-
 
 
 // Crear la interfaz gráfica UART
@@ -790,7 +817,8 @@ void app_main(void)
     init_uart();
 
     // Iniciar la tarea de recepción UART en el Core 1
-    xTaskCreatePinnedToCore(uart_receive_task, "UART Receive Task", 4096, NULL, 3, NULL, 1);
+xTaskCreatePinnedToCore(uart_receive_task, "UART Receive Task", 4096, NULL, 3, &uart_receive_task_handle, 1);
+    uart_write_bytes(UART_NUM, "Prueba de UART\r\n", strlen("Prueba de UART\r\n"));
 
 
     // Inicializar Wi-Fi
