@@ -10,6 +10,7 @@ typedef struct {
     char monto[10];
     char ticket_number[21];
     char impresion[1];
+    char enviar_msj[1];
     char codigo_respuesta[3];
     char comercio[13];
     char terminal_id[9];
@@ -57,6 +58,9 @@ void process_field(const char *field, int field_number, const char *command, Com
                 break;
             case 4:
                 strncpy(command_data->impresion, field, sizeof(command_data->impresion) - 1);
+                break;
+            case 5:
+                strncpy(command_data->enviar_msj, field, sizeof(command_data->enviar_msj) - 1);
                 break;
         }
     } else if (strcmp(command, "0210") == 0) {

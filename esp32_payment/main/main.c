@@ -382,27 +382,7 @@ static void textarea_event_handler(lv_event_t *event) {
         lv_obj_set_style_opa(keyboard, LV_OPA_COVER, LV_PART_MAIN); // Mostrarlo con opacidad completa
     }
 }
-/*
-static void textarea_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *textarea = lv_event_get_target(event);
 
-    if (code == LV_EVENT_FOCUSED) {
-        if (!keyboard) {
-            // Crear teclado si no existe
-            keyboard = lv_keyboard_create(lv_scr_act());
-            lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
-        }
-
-        // Asociar el teclado al textarea y mostrarlo
-        lv_keyboard_set_textarea(keyboard, textarea);
-
-        // Asegúrate de que el teclado no esté oculto
-        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_opa(keyboard, LV_OPA_COVER, LV_PART_MAIN); // Mostrarlo con opacidad completa
-    }
-}
-*/
 void create_wifi_settings_widget(lv_disp_t *disp) {
     // Crear pantalla y fondo
     lv_obj_t *scr = lv_disp_get_scr_act(disp);
@@ -645,39 +625,138 @@ void create_chat_interface(lv_disp_t *disp) {
 
 
 
-// Declaración de funciones auxiliares
-static void btnm_event_handler(lv_event_t *e);
-static void confirm_event_handler(lv_event_t *e);
 
-static lv_obj_t *textarea;
 
-// Generar datos aleatorios para simular la transacción
-void generate_transaction_command(const char *amount) {
-    char command[256];
 
-    snprintf(command, sizeof(command), "0210|%s|123456789012|TERMINAL1|AUTH123|CREDITO|20230101|ACCT123|VISA|20230101|123000", amount);
-    printf("Comando generado: %s\n", command);
 
-    // Aquí puedes enviar el comando por UART si es necesario.
-    // uart_write_bytes(UART_NUM, command, strlen(command));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+uint8_t calculate_lrc(const uint8_t *data, size_t length) {
+    uint8_t lrc = 0;
+    for (size_t i = 0; i < length; i++) {
+        lrc ^= data[i];
+    }
+    return lrc;
 }
 
+char* generateAlphanumericString(size_t length) {
+    const char charset[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    char *dest = malloc(length + 1);
+    if (dest) {
+        --length; // ajustar para el carácter nulo de fin de cadena
+        for (size_t n = 0; n < length; n++) {
+            int key = rand() % (int)(sizeof charset - 1);
+            dest[n] = charset[key];
+        }
+        dest[length] = '\0';
+    }
+    return dest;
+}
+
+
+
+
+
+// Declaración de funciones auxiliares
+static void keypad_event_handler(lv_event_t *e);
+static void confirm_mount_event_handler(lv_event_t *e);
+
+static lv_obj_t *textarea;
+// Generar una solicitud de transacción de venta con el monto ingresado
+// Generar una solicitud de transacción de venta con el monto ingresado
+void generate_transaction_command(const char *monto) {
+    // Caracteres de control
+    uint8_t STX = 0x02;
+    uint8_t ETX = 0x03;
+
+    // Generar número de ticket y otros campos
+    char *N_ticket = generateAlphanumericString(20);
+    const char *codigo_cmd = "0200";
+    const char *impresion_campo = "1";
+    const char *msj_status = "1";
+
+    // Construir el comando base en formato string
+    char command[256];
+    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto, N_ticket, impresion_campo, msj_status);
+
+    // Calcular el tamaño del comando final con STX, ETX y LRC
+    size_t command_length = strlen(command) + 3; // STX + ETX + LRC
+    uint8_t *formatted_command = malloc(command_length);
+    if (!formatted_command) {
+        printf("Error: No se pudo asignar memoria para el comando.");
+        free(N_ticket);
+        return;
+    }
+
+    // Construir el comando en el arreglo de uint8_t
+    size_t index = 0;
+    formatted_command[index++] = STX; // Agregar STX
+    memcpy(&formatted_command[index], command, strlen(command));
+    index += strlen(command);
+    formatted_command[index++] = ETX; // Agregar ETX
+
+    // Calcular el LRC
+    uint8_t lrc = calculate_lrc(&formatted_command[1], index - 1); // Excluir STX para el cálculo del LRC
+    formatted_command[index++] = lrc; // Agregar LRC
+
+    // Crear cadenas para enviar por UART
+    char debug_string[512];
+    snprintf(debug_string, sizeof(debug_string), "Comando en String: %s\n", command);
+    uart_write_bytes(UART_NUM, debug_string, strlen(debug_string));
+
+    char hex_string[1024] = "Comando en Hexa: [";
+    size_t offset = strlen(hex_string);
+    for (size_t i = 0; i < index; i++) {
+        snprintf(&hex_string[offset], sizeof(hex_string) - offset, "0x%02X ", formatted_command[i]);
+        offset = strlen(hex_string);
+    }
+    strncat(hex_string, "]\n", sizeof(hex_string) - offset - 1);
+    uart_write_bytes(UART_NUM, hex_string, strlen(hex_string));
+
+    // Enviar el comando por UART
+    uart_write_bytes(UART_NUM, (const char *)formatted_command, index);
+
+    // Liberar memoria
+    free(N_ticket);
+    free(formatted_command);
+}
+
+
+
+
+
 // Evento para procesar la entrada del teclado
-static void btnm_event_handler(lv_event_t *e) {
+static void keypad_event_handler(lv_event_t *e) {
     lv_obj_t *btnm = lv_event_get_target(e);
     const char *txt = lv_btnmatrix_get_btn_text(btnm, lv_btnmatrix_get_selected_btn(btnm));
 
     if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
         lv_textarea_del_char(textarea);
     } else if (strcmp(txt, LV_SYMBOL_NEW_LINE) == 0) {
-        confirm_event_handler(NULL);
+        confirm_mount_event_handler(NULL);
     } else {
         lv_textarea_add_text(textarea, txt);
     }
 }
 
 // Evento para confirmar y generar el comando
-static void confirm_event_handler(lv_event_t *e) {
+static void confirm_mount_event_handler(lv_event_t *e) {
     const char *amount = lv_textarea_get_text(textarea);
 
     if (strlen(amount) > 0) {
@@ -689,7 +768,7 @@ static void confirm_event_handler(lv_event_t *e) {
     }
 }
 
-// Crear la interfaz de la botonera
+// Crear la interfaz de la botonera numérica
 void create_keypad(void) {
     // Crear un textarea para mostrar el monto ingresado
     textarea = lv_textarea_create(lv_scr_act());
@@ -710,7 +789,7 @@ void create_keypad(void) {
     lv_obj_set_size(btnm, 400, 300);
     lv_obj_align(btnm, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_btnmatrix_set_map(btnm, btnm_map);
-    lv_obj_add_event_cb(btnm, btnm_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(btnm, keypad_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 
