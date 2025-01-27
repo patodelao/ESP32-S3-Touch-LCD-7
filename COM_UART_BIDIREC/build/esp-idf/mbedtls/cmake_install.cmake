@@ -1,4 +1,4 @@
-# Install script for directory: C:/Users/alons/esp/v5.4/esp-idf/components/mbedtls
+# Install script for directory: C:/Users/patricio.delao/esp/v5.3.2/esp-idf/components/mbedtls
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -34,11 +34,11 @@ endif()
 
 # Set path to fallback-tool for dependency-resolution.
 if(NOT DEFINED CMAKE_OBJDUMP)
-  set(CMAKE_OBJDUMP "C:/Users/alons/Espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32s3-elf-objdump.exe")
+  set(CMAKE_OBJDUMP "C:/Users/patricio.delao/Espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32s3-elf-objdump.exe")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/COM_UART_BIDIREC/build/esp-idf/mbedtls/mbedtls/cmake_install.cmake")
+  include("C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/COM_UART_BIDIREC/build/esp-idf/mbedtls/mbedtls/cmake_install.cmake")
 endif()
 
