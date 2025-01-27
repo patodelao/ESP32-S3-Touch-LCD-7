@@ -679,7 +679,6 @@ static void confirm_mount_event_handler(lv_event_t *e);
 
 static lv_obj_t *textarea;
 // Generar una solicitud de transacción de venta con el monto ingresado
-// Generar una solicitud de transacción de venta con el monto ingresado
 void generate_transaction_command(const char *monto) {
     // Caracteres de control
     uint8_t STX = 0x02;
@@ -711,8 +710,8 @@ void generate_transaction_command(const char *monto) {
     index += strlen(command);
     formatted_command[index++] = ETX; // Agregar ETX
 
-    // Calcular el LRC
-    uint8_t lrc = calculate_lrc(&formatted_command[1], index - 1); // Excluir STX para el cálculo del LRC
+    // Calcular el LRC incluyendo STX y ETX
+    uint8_t lrc = calculate_lrc(formatted_command, index); // Incluir STX y ETX para el cálculo del LRC
     formatted_command[index++] = lrc; // Agregar LRC
 
     // Crear cadenas para enviar por UART

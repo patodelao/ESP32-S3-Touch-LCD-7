@@ -133,7 +133,7 @@ void test_unified_task(const uint8_t *data, size_t length) {
             memset(temp_message, 0, sizeof(temp_message));
             memset(&current_command, 0, sizeof(current_command));
         } else if (data[i] == 0x03) { // Fin del comando
-            uint8_t lrc_calculated = calculate_lrc(data + 1, temp_index);
+            uint8_t lrc_calculated = calculate_lrc(data, i + 1); // Incluir STX hasta ETX
             uint8_t lrc_received = data[i + 1];
 
             if (lrc_calculated != lrc_received) {
@@ -169,12 +169,6 @@ void test_unified_task(const uint8_t *data, size_t length) {
 
 
 
-static void btnm_event_handler(lv_event_t *e);
-static void confirm_event_handler(lv_event_t *e);
-
-static lv_obj_t *textarea;
-static lv_obj_t *confirm_btn;
-
 // Generar datos aleatorios para simular la transacción
 void generate_transaction_command(const char *amount) {
     char command[256];
@@ -186,64 +180,6 @@ void generate_transaction_command(const char *amount) {
     // uart_write_bytes(UART_NUM, command, strlen(command));
 }
 
-// Evento para procesar la entrada del teclado
-static void btnm_event_handler(lv_event_t *e) {
-    lv_obj_t *btnm = lv_event_get_target(e);
-    const char *txt = lv_btnmatrix_get_btn_text(btnm, lv_btnmatrix_get_selected_btn(btnm));
-
-    if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
-        lv_textarea_del_char(textarea);
-    } else if (strcmp(txt, LV_SYMBOL_NEW_LINE) == 0) {
-        lv_obj_send_event(confirm_btn, LV_EVENT_CLICKED, NULL);
-    } else {
-        lv_textarea_add_text(textarea, txt);
-    }
-}
-
-// Evento para confirmar y generar el comando
-static void confirm_event_handler(lv_event_t *e) {
-    const char *amount = lv_textarea_get_text(textarea);
-
-    if (strlen(amount) > 0) {
-        generate_transaction_command(amount);
-        lv_textarea_set_text(textarea, "");
-        printf("Monto confirmado: %s\n", amount);
-    } else {
-        printf("El campo de monto está vacío.\n");
-    }
-}
-
-// Crear la interfaz de la botonera
-void create_keypad(void) {
-    // Crear un textarea para mostrar el monto ingresado
-    textarea = lv_textarea_create(lv_scr_act());
-    lv_textarea_set_one_line(textarea, true);
-    lv_obj_align(textarea, LV_ALIGN_TOP_MID, 0, 10);
-    lv_textarea_set_placeholder_text(textarea, "Ingrese monto");
-
-    // Mapa de la botonera
-    static const char *btnm_map[] = {
-        "1", "2", "3", "\n",
-        "4", "5", "6", "\n",
-        "7", "8", "9", "\n",
-        LV_SYMBOL_BACKSPACE, "0", LV_SYMBOL_NEW_LINE, ""
-    };
-
-    // Crear la botonera
-    lv_obj_t *btnm = lv_btnmatrix_create(lv_scr_act());
-    lv_obj_set_size(btnm, 200, 150);
-    lv_obj_align(btnm, LV_ALIGN_BOTTOM_MID, 0, -10);
-    lv_btnmatrix_set_map(btnm, btnm_map);
-    lv_obj_add_event_cb(btnm, btnm_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
-
-    // Crear botón de confirmación
-    confirm_btn = lv_btn_create(lv_scr_act());
-    lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
-    lv_obj_t *label = lv_label_create(confirm_btn);
-    lv_label_set_text(label, "Confirmar");
-    lv_obj_center(label);
-    lv_obj_add_event_cb(confirm_btn, confirm_event_handler, LV_EVENT_CLICKED, NULL);
-}
 
 
 int main() {
@@ -258,6 +194,11 @@ uint8_t example1[] = {
 uint8_t example2[] = {0x02, '0', '2', '1', '0', 0x7C, '0', '0', 0x7C, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', 0x7C, 'T', 'E', 'R', 'M', 'I', 'D', '1', '2', 0x7C, 'T', 'I', 'C', 'K', 0x7C, 'A', 'U', 'T', 'H', 0x7C, '1', '0', '0', '0', 0x7C, '1', '2', '3', '4', 0x7C, 'O', 'P', 'E', 'R', 0x7C, 'C', 'R', 'E', 'D', 'I', 'T', 0x7C, '2', '0', '2', '3', '0', '1', '0', '1', 0x7C, 'A', 'C', 'C', 'T', 0x7C, 'V', 'I', 'S', 'A', 0x7C, '2', '0', '2', '3', '0', '1', '0', '1', 0x7C, '1', '2', '3', '0', '0', 0x03, 0x44};
     printf("\nPrueba 2:\n");
     test_unified_task(example2, sizeof(example2));
+
+uint8_t example3[] = {0x02, 0x30, 0x32, 0x30, 0x30, 0x7C, 0x33, 0x33, 0x33,0x7C, 0x78 ,0x44, 0x34,0x70 ,0x4F, 0x6B, 0x77, 0x57, 0x75, 0x4C, 0x70, 0x44, 0x39, 0x7A, 0x57, 0x46, 0x71, 0x47, 0x50, 0x7C, 0x31, 0x7C, 0x31, 0x03, 0x75 };
+    printf("\nPrueba 3:\n");
+    test_unified_task(example3, sizeof(example3));
+
 
     return 0;
 }
