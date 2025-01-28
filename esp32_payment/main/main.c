@@ -142,9 +142,9 @@ void lvgl_unlock(void);
 #define LVGL_TASK_STACK_SIZE   (4 * 1024)
 #define LVGL_TASK_PRIORITY     2
 
-static SemaphoreHandle_t lvgl_mux = NULL;
-static QueueHandle_t uart_event_queue = NULL;
-static QueueHandle_t command_queue = NULL;
+static SemaphoreHandle_t lvgl_mux = NULL;   
+static QueueHandle_t uart_event_queue = NULL; // cola para eventos de UART
+static QueueHandle_t command_queue = NULL; // cola para procesar comandos
 
 static lv_obj_t *textarea;
 
@@ -174,6 +174,88 @@ static void init_uart(void) {
         printf("Error al instalar el driver UART: %s\n", esp_err_to_name(ret));
     }
 }
+
+
+
+// Almacenar comandos en el historial
+void store_command(const CommandData *command) {
+    if (command_count < MAX_COMMANDS) {
+        command_history[command_count++] = *command;
+    } else {
+        uart_write_bytes(UART_NUM, "Historial lleno. Comando descartado.\n", 37);
+    }
+}
+
+void process_field(const char *field, int field_number, const char *command, CommandData *command_data) {
+    if (strcmp(command, "0200") == 0) {
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->monto, field, sizeof(command_data->monto) - 1);
+                break;
+            case 3:
+                strncpy(command_data->ticket_number, field, sizeof(command_data->ticket_number) - 1);
+                break;
+            case 4:
+                strncpy(command_data->impresion, field, sizeof(command_data->impresion) - 1);
+                break;
+            case 5:
+                strncpy(command_data->enviar_msj, field, sizeof(command_data->enviar_msj) - 1);
+                break;
+        }
+    } else if (strcmp(command, "0210") == 0) {
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
+                break;
+            case 3:
+                strncpy(command_data->comercio, field, sizeof(command_data->comercio) - 1);
+                break;
+            case 4:
+                strncpy(command_data->terminal_id, field, sizeof(command_data->terminal_id) - 1);
+                break;
+            case 5:
+                strncpy(command_data->ticket_number, field, sizeof(command_data->ticket_number) - 1);
+                break;
+            case 6:
+                strncpy(command_data->autorizacion, field, sizeof(command_data->autorizacion) - 1);
+                break;
+            case 7:
+                strncpy(command_data->monto, field, sizeof(command_data->monto) - 1);
+                break;
+            case 8:
+                strncpy(command_data->ultimos_4, field, sizeof(command_data->ultimos_4) - 1);
+                break;
+            case 9:
+                strncpy(command_data->operacion, field, sizeof(command_data->operacion) - 1);
+                break;
+            case 10:
+                strncpy(command_data->tipo_tarjeta, field, sizeof(command_data->tipo_tarjeta) - 1);
+                break;
+            case 11:
+                strncpy(command_data->fecha_contable, field, sizeof(command_data->fecha_contable) - 1);
+                break;
+            case 12:
+                strncpy(command_data->numero_cuenta, field, sizeof(command_data->numero_cuenta) - 1);
+                break;
+            case 13:
+                strncpy(command_data->abreviacion_tarjeta, field, sizeof(command_data->abreviacion_tarjeta) - 1);
+                break;
+            case 14:
+                strncpy(command_data->fecha_transaccion, field, sizeof(command_data->fecha_transaccion) - 1);
+                break;
+            case 15:
+                strncpy(command_data->hora_transaccion, field, sizeof(command_data->hora_transaccion) - 1);
+                break;
+        }
+    }
+}
+
 
 // Función para inicializar el sistema de almacenamiento no volátil
 uint8_t calculate_lrc(const uint8_t *data, size_t length) {
@@ -308,75 +390,118 @@ void create_keypad(void) {
     lv_obj_add_event_cb(btnm, keypad_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
-// funcion de prueba ACK o NAK
+// **Procesar los comandos recibidos por UART**
+bool process_uart_data(const uint8_t *data, size_t length) {
+    uint8_t temp_message[UART_BUFFER_SIZE] = {0};
+    size_t temp_index = 0;
+    char command[5] = {0};
+    CommandData current_command = {0};
+
+    for (size_t i = 0; i < length; i++) {
+        if (data[i] == 0x02) { // Inicio del comando
+            temp_index = 0;
+            memset(temp_message, 0, sizeof(temp_message));
+            memset(&current_command, 0, sizeof(current_command));
+        } else if (data[i] == 0x03) { // Fin del comando
+            if (temp_index == 0 || temp_index >= UART_BUFFER_SIZE - 1) {
+                return false; // Comando vacío o demasiado largo
+            }
+
+            uint8_t lrc_calculated = calculate_lrc(temp_message, temp_index);
+            if (i + 1 >= length) {
+                return false; // LRC fuera de rango
+            }
+            uint8_t lrc_received = data[i + 1];
+
+            if (lrc_calculated != lrc_received) {
+                return false; // LRC incorrecto
+            }
+
+            temp_message[temp_index] = '\0';
+            char *field = strtok((char *)temp_message, "|");
+
+            int field_count = 0;
+            while (field != NULL) {
+                if (field_count == 0) {
+                    strncpy(command, field, sizeof(command) - 1);
+                }
+                process_field(field, ++field_count, command, &current_command);
+                field = strtok(NULL, "|");
+            }
+
+            store_command(&current_command);
+            return true; // Comando procesado correctamente
+        } else { // Datos intermedios
+            if (temp_index >= sizeof(temp_message) - 1) {
+                return false; // Buffer lleno, comando inválido
+            }
+            temp_message[temp_index++] = data[i];
+        }
+    }
+
+    return false; // Si el bucle termina sin encontrar un fin de comando
+}
+
+
+
+// **Task para procesar comandos y responder con ACK/NAK**
 static void command_processing_task(void *param) {
-    char command_buffer[UART_BUFFER_SIZE];
+    uint8_t command_buffer[UART_BUFFER_SIZE];
 
     while (1) {
         // Esperar a que un comando esté en la cola
         if (xQueueReceive(command_queue, command_buffer, portMAX_DELAY)) {
             printf("Procesando comando: %s\n", command_buffer);
 
-            // Procesar el comando y generar ACK o NAK
-            if (strcmp(command_buffer, "COMANDO_VALIDO") == 0) {
-                const char *ack = "ACK\r\n";
-                uart_write_bytes(UART_NUM, ack, strlen(ack));
-            } else {
-                const char *nak = "NAK\r\n";
-                uart_write_bytes(UART_NUM, nak, strlen(nak));
-            }
+            // Procesar comando y verificar LRC
+            bool is_valid = process_uart_data(command_buffer, strlen((char *)command_buffer));
+
+            // Enviar ACK si es válido, NAK si es inválido
+            const char *response = is_valid ? "ACK\r\n" : "NAK\r\n";
+            uart_write_bytes(UART_NUM, response, strlen(response));
         }
     }
 }
+a
 
+// **Task de recepción de datos UART**
 static void uart_RX_task(void *param) {
-    // Buffer para recepción de datos UART
     uint8_t data_buffer[UART_BUFFER_SIZE] = {0};
     size_t bytes_read = 0;
 
     while (1) {
-        // Verificar si hay eventos UART
         uart_event_t event;
-        if (xQueueReceive(uart_event_queue, (void *)&event, pdMS_TO_TICKS(10))) {
+        if (xQueueReceive(uart_event_queue, &event, pdMS_TO_TICKS(10))) {
             switch (event.type) {
                 case UART_DATA: {
-                    // Leer datos del UART mientras haya bytes disponibles
                     while ((bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer) - 1, pdMS_TO_TICKS(10))) > 0) {
-                        data_buffer[bytes_read] = '\0';  // Asegurar terminación de cadena
+                        data_buffer[bytes_read] = '\0'; 
                         printf("Mensaje recibido: %s\n", data_buffer);
 
-                        // Enviar el mensaje a la cola para su procesamiento
                         if (!xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100))) {
                             printf("Error: no se pudo enviar el mensaje a la cola\n");
                         }
                     }
                     break;
                 }
-
                 default:
                     printf("Evento UART no manejado: %d\n", event.type);
                     break;
             }
         }
 
-        // Procesar mensajes pendientes fuera de eventos (por si se perdieron eventos)
         while ((bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer) - 1, 0)) > 0) {
-            data_buffer[bytes_read] = '\0';  // Asegurar terminación de cadena
+            data_buffer[bytes_read] = '\0'; 
             printf("Procesando mensaje fuera de evento: %s\n", data_buffer);
 
-            // Enviar el mensaje a la cola para su procesamiento
             if (!xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100))) {
                 printf("Error: no se pudo enviar el mensaje a la cola\n");
             }
         }
 
-        // Retardo breve para evitar saturar el flujo
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-
-
-
 
 
 
