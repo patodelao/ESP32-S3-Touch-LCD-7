@@ -143,7 +143,9 @@ void lvgl_unlock(void);
 #define LVGL_TASK_PRIORITY     2
 
 static SemaphoreHandle_t lvgl_mux = NULL;
-static QueueHandle_t uart_event_queue;
+static QueueHandle_t uart_event_queue = NULL;
+static QueueHandle_t command_queue = NULL;
+
 static lv_obj_t *textarea;
 
 
@@ -306,10 +308,28 @@ void create_keypad(void) {
     lv_obj_add_event_cb(btnm, keypad_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
+// funcion de prueba ACK o NAK
+static void command_processing_task(void *param) {
+    char command_buffer[UART_BUFFER_SIZE];
 
+    while (1) {
+        // Esperar a que un comando esté en la cola
+        if (xQueueReceive(command_queue, command_buffer, portMAX_DELAY)) {
+            printf("Procesando comando: %s\n", command_buffer);
 
+            // Procesar el comando y generar ACK o NAK
+            if (strcmp(command_buffer, "COMANDO_VALIDO") == 0) {
+                const char *ack = "ACK\r\n";
+                uart_write_bytes(UART_NUM, ack, strlen(ack));
+            } else {
+                const char *nak = "NAK\r\n";
+                uart_write_bytes(UART_NUM, nak, strlen(nak));
+            }
+        }
+    }
+}
 
-static void unified_task(void *param) {
+static void uart_RX_task(void *param) {
     // Buffer para recepción de datos UART
     uint8_t data_buffer[UART_BUFFER_SIZE] = {0};
     size_t bytes_read = 0;
@@ -320,33 +340,15 @@ static void unified_task(void *param) {
         if (xQueueReceive(uart_event_queue, (void *)&event, pdMS_TO_TICKS(10))) {
             switch (event.type) {
                 case UART_DATA: {
+                    // Leer datos del UART mientras haya bytes disponibles
                     while ((bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer) - 1, pdMS_TO_TICKS(10))) > 0) {
                         data_buffer[bytes_read] = '\0';  // Asegurar terminación de cadena
                         printf("Mensaje recibido: %s\n", data_buffer);
-                        /*
-                        // Actualizar la interfaz con el mensaje recibido
-                        if (lvgl_lock(-1)) {
-                            const char *current_text = lv_label_get_text(received_label);
 
-                            // Limpiar el contenedor si supera el tamaño permitido.
-                            if (strlen(current_text) + bytes_read > 1024) {
-                                lv_obj_clean(chat_container);  // Limpia el contenedor.
-                                lv_label_set_text(received_label, "Mensajes recibidos:\n");
-                            }
-
-                            // Actualizar el contenido del contenedor con el nuevo mensaje.
-                            char updated_text[1024];
-                            snprintf(updated_text, sizeof(updated_text), "%s\nRecibido: %s", current_text, data_buffer);
-                            lv_label_set_text(received_label, updated_text);
-
-                            lvgl_unlock();
+                        // Enviar el mensaje a la cola para su procesamiento
+                        if (!xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100))) {
+                            printf("Error: no se pudo enviar el mensaje a la cola\n");
                         }
-
-                        */
-                        // Enviar respuesta al mensaje recibido
-                        const char *response = "Respuesta desde el ESP32\r\n";
-                        uart_write_bytes(UART_NUM, response, strlen(response));
-
                     }
                     break;
                 }
@@ -357,27 +359,21 @@ static void unified_task(void *param) {
             }
         }
 
-        // Procesar mensajes pendientes si no hay eventos
+        // Procesar mensajes pendientes fuera de eventos (por si se perdieron eventos)
         while ((bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer) - 1, 0)) > 0) {
-            data_buffer[bytes_read] = '\0';
+            data_buffer[bytes_read] = '\0';  // Asegurar terminación de cadena
             printf("Procesando mensaje fuera de evento: %s\n", data_buffer);
+
+            // Enviar el mensaje a la cola para su procesamiento
+            if (!xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100))) {
+                printf("Error: no se pudo enviar el mensaje a la cola\n");
+            }
         }
 
         // Retardo breve para evitar saturar el flujo
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -473,7 +469,6 @@ static void lvgl_port_task(void *arg)
     }
 }
 
-
 static esp_err_t i2c_master_init(void)
 {
     int i2c_master_port = I2C_MASTER_NUM;
@@ -491,7 +486,7 @@ static esp_err_t i2c_master_init(void)
 
     return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
 }
-
+/*
 void gpio_init(void)
 {
     //zero-initialize the config structure.
@@ -506,7 +501,7 @@ void gpio_init(void)
     // io_conf.pull_up_en = 1;
     gpio_config(&io_conf);
 }
-
+*/
 static void lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 {
     uint16_t touchpad_x[1] = {0};
@@ -591,11 +586,19 @@ void app_main(void)
     // Inicializar UART
     init_uart();
 
-    // Iniciar la tarea de eventos UART en el Core 0
-    xTaskCreatePinnedToCore(unified_task, "unified_task", 4096, NULL, 6, NULL, 0); // Core 0
 
-  
+    command_queue = xQueueCreate(10, UART_BUFFER_SIZE);
+    if (command_queue == NULL) {
+    printf("Error: no se pudo crear la cola de comandos\n");
+}
+
+
+    // Iniciar la tarea de eventos UART en el Core 0
+    xTaskCreatePinnedToCore(uart_RX_task, "uart_RX_task", 4096, NULL, 2, NULL, 0); // Core 0
+    xTaskCreatePinnedToCore(command_processing_task, "Command Task", 4096, NULL, 1, NULL, tskNO_AFFINITY); // Sin núcleo fijo
+
     
+
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
     static lv_disp_drv_t disp_drv;      // contains callback functions
 
@@ -610,7 +613,7 @@ void app_main(void)
     init_i2c();
 
     // Initialize GPIO
-    gpio_init();    
+    //gpio_init();    
 
 
     // Initialize touch controller
@@ -626,11 +629,11 @@ void app_main(void)
 
     if (lvgl_lock(-1)) {
         lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
-        //create_chat_interface(disp);  // Crea el widget UART
         create_keypad();  // Crea el widget de la botonera
         lvgl_unlock();
     }
 
+    //vTaskStartScheduler();
 
 
 }
@@ -852,7 +855,7 @@ void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp)
     lvgl_mux = xSemaphoreCreateRecursiveMutex();
     assert(lvgl_mux);
     ESP_LOGI(TAG, "Create LVGL task en core 1");
-    xTaskCreatePinnedToCore(lvgl_port_task, "LVGL", LVGL_TASK_STACK_SIZE, disp, 10, NULL, 1);
+    xTaskCreatePinnedToCore(lvgl_port_task, "LVGL", LVGL_TASK_STACK_SIZE, disp, 2, NULL, 1);
 
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
