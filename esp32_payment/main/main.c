@@ -142,11 +142,18 @@ void lvgl_unlock(void);
 #define LVGL_TASK_STACK_SIZE   (4 * 1024)
 #define LVGL_TASK_PRIORITY     2
 
+#define MAX_RETRIES 3  // Número máximo de reintentos ACK / NAK 
+#define TIMEOUT_MS 10000  // Tiempo de espera para ACK (10 segundos)
+static esp_timer_handle_t ack_timer = NULL;
+static uint8_t retry_count = 0;
+static char last_transaction_command[256];  // Último comando enviado
+
 static SemaphoreHandle_t lvgl_mux = NULL;   
 static QueueHandle_t uart_event_queue = NULL; // cola para eventos de UART
 static QueueHandle_t command_queue = NULL; // cola para procesar comandos
 
 static lv_obj_t *textarea;
+
 
 
 // Función para inicializar UART
@@ -176,7 +183,6 @@ static void init_uart(void) {
 }
 
 
-
 // Almacenar comandos en el historial
 void store_command(const CommandData *command) {
     if (command_count < MAX_COMMANDS) {
@@ -185,6 +191,7 @@ void store_command(const CommandData *command) {
         uart_write_bytes(UART_NUM, "Historial lleno. Comando descartado.\n", 37);
     }
 }
+
 
 void process_field(const char *field, int field_number, const char *command, CommandData *command_data) {
     if (strcmp(command, "0200") == 0) {
@@ -281,60 +288,72 @@ char* generateAlphanumericString(size_t length) {
     return dest;
 }
 
-// Generar una solicitud de transacción de venta con el monto ingresado
+
+
+
+
+// Función de callback del timer (se activa si no llega el ACK a tiempo)
+static void ack_timeout_callback(void *arg) {
+    if (retry_count < MAX_RETRIES) {
+        printf("No se recibió ACK. Reintentando envío #%d...\n", retry_count + 1);
+        retry_count++;
+        uart_write_bytes(UART_NUM, last_transaction_command, strlen(last_transaction_command));
+        esp_timer_start_once(ack_timer, TIMEOUT_MS * 1000);  // Reiniciar el timer pasados 10 seg
+    } else {
+        printf("Error: No se recibió ACK después de %d intentos. Cancelando.\n", MAX_RETRIES);
+        retry_count = 0;  // Resetear el contador de reintentos
+    }
+}
+
+// **Inicializar el timer**
+void init_ack_timer() {
+    esp_timer_create_args_t timer_args = {
+        .callback = &ack_timeout_callback,
+        .name = "ack_timer"
+    };
+    esp_timer_create(&timer_args, &ack_timer);
+}
+
+
+// Función para generar y enviar un comando de transacción
 void generate_transaction_command(const char *monto) {
-    // Caracteres de control
     uint8_t STX = 0x02;
     uint8_t ETX = 0x03;
 
-    // Generar número de ticket y otros campos
     char *N_ticket = generateAlphanumericString(20);
     const char *codigo_cmd = "0200";
     const char *impresion_campo = "1";
     const char *msj_status = "1";
 
-    // Construir el comando base en formato string
     char command[256];
     snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto, N_ticket, impresion_campo, msj_status);
 
-    // Calcular el tamaño del comando final con STX, ETX y LRC
-    size_t command_length = strlen(command) + 3; // STX + ETX + LRC
+    size_t command_length = strlen(command) + 3;  // ETX + LRC
     uint8_t *formatted_command = malloc(command_length);
     if (!formatted_command) {
-        printf("Error: No se pudo asignar memoria para el comando.");
+        printf("Error: No se pudo asignar memoria.\n");
         free(N_ticket);
         return;
     }
 
-    // Construir el comando en el arreglo de uint8_t
     size_t index = 0;
-    formatted_command[index++] = STX; // Agregar STX
     memcpy(&formatted_command[index], command, strlen(command));
     index += strlen(command);
-    formatted_command[index++] = ETX; // Agregar ETX
+    formatted_command[index++] = ETX;  // Agregar ETX
 
-    // Calcular el LRC incluyendo STX y ETX
-    uint8_t lrc = calculate_lrc(formatted_command, index); // Incluir STX y ETX para el cálculo del LRC
-    formatted_command[index++] = lrc; // Agregar LRC
+    uint8_t lrc = calculate_lrc(formatted_command, index);
+    formatted_command[index++] = lrc;  // Agregar LRC
 
-    // Crear cadenas para enviar por UART
-    char debug_string[512];
-    snprintf(debug_string, sizeof(debug_string), "Comando en String: %s\n", command);
-    uart_write_bytes(UART_NUM, debug_string, strlen(debug_string));
+    // Guardar el comando enviado
+    strncpy(last_transaction_command, (const char *)formatted_command, sizeof(last_transaction_command) - 1);
 
-    char hex_string[1024] = "Comando en Hexa: [";
-    size_t offset = strlen(hex_string);
-    for (size_t i = 0; i < index; i++) {
-        snprintf(&hex_string[offset], sizeof(hex_string) - offset, "0x%02X ", formatted_command[i]);
-        offset = strlen(hex_string);
-    }
-    strncat(hex_string, "]\n", sizeof(hex_string) - offset - 1);
-    uart_write_bytes(UART_NUM, hex_string, strlen(hex_string));
-
-    // Enviar el comando por UART
+    // Enviar el comando
     uart_write_bytes(UART_NUM, (const char *)formatted_command, index);
 
-    // Liberar memoria
+    // Iniciar el timer de 10 segundos
+    retry_count = 0;
+    esp_timer_start_once(ack_timer, TIMEOUT_MS * 1000);
+
     free(N_ticket);
     free(formatted_command);
 }
@@ -444,24 +463,28 @@ bool process_uart_data(const uint8_t *data, size_t length) {
 
 
 
-// **Task para procesar comandos y responder con ACK/NAK**
+// **Manejar respuestas UART**
 static void command_processing_task(void *param) {
     uint8_t command_buffer[UART_BUFFER_SIZE];
 
     while (1) {
-        // Esperar a que un comando esté en la cola
         if (xQueueReceive(command_queue, command_buffer, portMAX_DELAY)) {
             printf("Procesando comando: %s\n", command_buffer);
 
-            // Procesar comando y verificar LRC
-            bool is_valid = process_uart_data(command_buffer, strlen((char *)command_buffer));
-
-            // Enviar ACK si es válido, NAK si es inválido
-            const char *response = is_valid ? "ACK\r\n" : "NAK\r\n";
-            uart_write_bytes(UART_NUM, response, strlen(response));
+            // Si es ACK, detener el timer y resetear el contador
+            if (strncmp((char *)command_buffer, "ACK", 3) == 0) {
+                printf("ACK recibido. Deteniendo timer.\n");
+                esp_timer_stop(ack_timer);
+                retry_count = 0;  // Resetear contador
+            } else if (strncmp((char *)command_buffer, "NAK", 3) == 0) {
+                printf("NAK recibido. Reintentando...\n");
+                ack_timeout_callback(NULL);  // Simular un timeout inmediato
+            }
         }
     }
 }
+
+
 
 
 // **Task de recepción de datos UART**
@@ -708,6 +731,8 @@ void app_main(void)
     // Initialize NVS
     init_nvs();
 
+    init_ack_timer();
+
     // Inicializar UART
     init_uart();
 
@@ -715,7 +740,7 @@ void app_main(void)
     command_queue = xQueueCreate(10, UART_BUFFER_SIZE);
     if (command_queue == NULL) {
     printf("Error: no se pudo crear la cola de comandos\n");
-}
+    }
 
 
     // Iniciar la tarea de eventos UART en el Core 0
