@@ -462,7 +462,7 @@ static void command_processing_task(void *param) {
         }
     }
 }
-a
+
 
 // **Task de recepción de datos UART**
 static void uart_RX_task(void *param) {
