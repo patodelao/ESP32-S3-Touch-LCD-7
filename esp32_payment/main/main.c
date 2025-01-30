@@ -186,52 +186,6 @@ void update_led_indicator(int status, int attempts) {
 }
 
 
-// **Función que envía el comando y espera ACK**
-bool send_command_and_wait_for_ack(const uint8_t *command, size_t length) {
-    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        printf("Intento %d de %d: Enviando comando...\n", attempt, MAX_RETRIES);
-        
-        // Enviar comando por UART
-        uart_write_bytes(UART_NUM, (const char *)command, length);
-
-        // **Actualizar LED a estado neutro con el intento actual**
-        if (lvgl_lock(-1)) {
-            update_led_indicator(0, attempt);  // Cambiar color a gris y actualizar intento
-            lvgl_unlock();
-        }
-
-        // Esperar el ACK en la cola con timeout de 5 segundos
-        uint8_t received_byte;
-        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
-            if (received_byte == 0x06) {  // ACK recibido
-                printf("ACK recibido! Comando confirmado.\n");
-
-                // **Actualizar LED a verde**
-                if (lvgl_lock(-1)) {
-                    update_led_indicator(2, attempt);
-                    lvgl_unlock();
-                }
-                return true;
-            } else if (received_byte == 0x15) {  // NAK recibido
-                printf("NAK recibido! Reintentando...\n");
-
-                // **Actualizar LED a rojo**
-                if (lvgl_lock(-1)) {
-                    update_led_indicator(3, attempt);
-                    lvgl_unlock();
-                }
-            } else {
-                printf("Se recibió otro byte en lugar de ACK/NAK: 0x%02X\n", received_byte);
-            }
-        } else {
-            printf("Tiempo de espera agotado. No se recibió ACK.\n");
-        }
-    }
-
-    printf("Error: No se recibió ACK después de %d intentos.\n", MAX_RETRIES);
-    return false;
-}
-
 
 // Función para inicializar UART
 static void init_uart(void) {
@@ -391,6 +345,8 @@ static void transaction_task(void *param) {
             }
         } else {
             printf("Tiempo de espera agotado en intento %d.\n", attempt);
+            update_led_indicator(3, attempt);  // LED rojo
+
         }
     }
 
@@ -521,7 +477,7 @@ int process_uart_data(const uint8_t *data, size_t length) {
         } 
         else if (data[i] == 0x15) {
             printf("NAK recibido. Enviando confirmación...\n");
-            uart_write_bytes(UART_NUM, "NAK recibido\n", strlen("NAK recibido\n"));
+            //uart_write_bytes(UART_NUM, "NAK recibido\n", strlen("NAK recibido\n"));
             return 3;
         } 
 
@@ -629,11 +585,12 @@ static void uart_RX_task(void *param) {
 
                         // **Buscar ACK (0x06)**
                         for (size_t i = 0; i < bytes_read; i++) {
-                            if (data_buffer[i] == 0x06) {
-                                printf("ACK detectado en UART. Enviándolo a la cola.\n");
-                                uint8_t ack_byte = 0x06;
+                            if (data_buffer[i] == 0x06 || data_buffer[i] == 0x15) {
+                                printf("ACK/NAK detectado en UART: 0x%02X. Enviándolo a la cola.\n", data_buffer[i]);
+                                uint8_t ack_byte = data_buffer[i];  // se guarda el ACK o NAK
                                 xQueueSend(ack_queue, &ack_byte, portMAX_DELAY);
                             }
+
                         }
 
                         // Enviar mensaje a la cola de procesamiento
