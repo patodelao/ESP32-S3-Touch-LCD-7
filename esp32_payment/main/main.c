@@ -28,6 +28,7 @@
 #include "driver/i2c.h"
 #include "esp_lcd_touch_gt911.h"
 #include "driver/uart.h"
+#include "time.h"
 
 #define I2C_MASTER_SCL_IO           9       /*!< GPIO number used for I2C master clock */
 #define I2C_MASTER_SDA_IO           8       /*!< GPIO number used for I2C master data  */
@@ -40,13 +41,16 @@
 #define GPIO_INPUT_IO_4    4
 #define GPIO_INPUT_PIN_SEL  1ULL<<GPIO_INPUT_IO_4
 
-static const char *TAG = "example";
+static const char *TAG = "demo";
 
 #define UART_NUM 1  
 #define UART_TX_PIN 43
 #define UART_RX_PIN 44
 #define UART_BUFFER_SIZE 1024
 #define MAX_COMMANDS 100
+
+#define MAX_RETRIES 3  // Número máximo de intentos de reenvío
+#define ACK_TIMEOUT_MS 5000 // Tiempo de espera para recibir ACK en milisegundos
 
 
 static lv_obj_t *received_label;
@@ -142,18 +146,91 @@ void lvgl_unlock(void);
 #define LVGL_TASK_STACK_SIZE   (4 * 1024)
 #define LVGL_TASK_PRIORITY     2
 
-#define MAX_RETRIES 3  // Número máximo de reintentos ACK / NAK 
-#define TIMEOUT_MS 10000  // Tiempo de espera para ACK (10 segundos)
-static esp_timer_handle_t ack_timer = NULL;
-static uint8_t retry_count = 0;
-static char last_transaction_command[256];  // Último comando enviado
-
 static SemaphoreHandle_t lvgl_mux = NULL;   
 static QueueHandle_t uart_event_queue = NULL; // cola para eventos de UART
 static QueueHandle_t command_queue = NULL; // cola para procesar comandos
 
-static lv_obj_t *textarea;
+// Variable global para recibir el ACK
+static QueueHandle_t ack_queue = NULL;
 
+
+static lv_obj_t *textarea;
+static lv_obj_t *led_indicator;  // Objeto del LED
+static lv_obj_t *led_label;  // Etiqueta para el número de intentos
+
+
+
+
+// **Función para actualizar el indicador LED con el estado actual**
+void update_led_indicator(int status, int attempts) {
+    if (lvgl_lock(-1)) {
+        if (status == 2) {  // ACK recibido (verde)
+            lv_obj_set_style_bg_color(led_indicator, lv_color_make(0, 255, 0), LV_PART_MAIN);
+        } else if (status == 3) {  // NAK recibido (rojo)
+            lv_obj_set_style_bg_color(led_indicator, lv_color_make(255, 0, 0), LV_PART_MAIN);
+        } else {  // Estado neutro (gris)
+            lv_obj_set_style_bg_color(led_indicator, lv_color_make(200, 200, 200), LV_PART_MAIN);
+        }
+
+        // Actualizar número de intentos
+        char attempt_str[4];
+        snprintf(attempt_str, sizeof(attempt_str), "%d", attempts);
+        lv_label_set_text(led_label, attempt_str);
+
+        // **Forzar actualización de la interfaz**
+        lv_obj_invalidate(led_indicator);
+        lv_refr_now(NULL);  // Fuerza la actualización de LVGL
+
+        lvgl_unlock();
+    }
+}
+
+
+// **Función que envía el comando y espera ACK**
+bool send_command_and_wait_for_ack(const uint8_t *command, size_t length) {
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        printf("Intento %d de %d: Enviando comando...\n", attempt, MAX_RETRIES);
+        
+        // Enviar comando por UART
+        uart_write_bytes(UART_NUM, (const char *)command, length);
+
+        // **Actualizar LED a estado neutro con el intento actual**
+        if (lvgl_lock(-1)) {
+            update_led_indicator(0, attempt);  // Cambiar color a gris y actualizar intento
+            lvgl_unlock();
+        }
+
+        // Esperar el ACK en la cola con timeout de 5 segundos
+        uint8_t received_byte;
+        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+            if (received_byte == 0x06) {  // ACK recibido
+                printf("ACK recibido! Comando confirmado.\n");
+
+                // **Actualizar LED a verde**
+                if (lvgl_lock(-1)) {
+                    update_led_indicator(2, attempt);
+                    lvgl_unlock();
+                }
+                return true;
+            } else if (received_byte == 0x15) {  // NAK recibido
+                printf("NAK recibido! Reintentando...\n");
+
+                // **Actualizar LED a rojo**
+                if (lvgl_lock(-1)) {
+                    update_led_indicator(3, attempt);
+                    lvgl_unlock();
+                }
+            } else {
+                printf("Se recibió otro byte en lugar de ACK/NAK: 0x%02X\n", received_byte);
+            }
+        } else {
+            printf("Tiempo de espera agotado. No se recibió ACK.\n");
+        }
+    }
+
+    printf("Error: No se recibió ACK después de %d intentos.\n", MAX_RETRIES);
+    return false;
+}
 
 
 // Función para inicializar UART
@@ -183,6 +260,7 @@ static void init_uart(void) {
 }
 
 
+
 // Almacenar comandos en el historial
 void store_command(const CommandData *command) {
     if (command_count < MAX_COMMANDS) {
@@ -191,7 +269,6 @@ void store_command(const CommandData *command) {
         uart_write_bytes(UART_NUM, "Historial lleno. Comando descartado.\n", 37);
     }
 }
-
 
 void process_field(const char *field, int field_number, const char *command, CommandData *command_data) {
     if (strcmp(command, "0200") == 0) {
@@ -288,34 +365,42 @@ char* generateAlphanumericString(size_t length) {
     return dest;
 }
 
+static void transaction_task(void *param) {
+    uint8_t *command = (uint8_t *)param;
+    size_t length = strlen((char *)command);
 
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        printf("Intento %d de %d: Enviando comando...\n", attempt, MAX_RETRIES);
+        
+        // Enviar el comando por UART
+        uart_write_bytes(UART_NUM, (const char *)command, length);
 
+        // **Actualizar LED a estado neutro y mostrar intentos**
+        update_led_indicator(0, attempt);
 
-
-// Función de callback del timer (se activa si no llega el ACK a tiempo)
-static void ack_timeout_callback(void *arg) {
-    if (retry_count < MAX_RETRIES) {
-        printf("No se recibió ACK. Reintentando envío #%d...\n", retry_count + 1);
-        retry_count++;
-        uart_write_bytes(UART_NUM, last_transaction_command, strlen(last_transaction_command));
-        esp_timer_start_once(ack_timer, TIMEOUT_MS * 1000);  // Reiniciar el timer pasados 10 seg
-    } else {
-        printf("Error: No se recibió ACK después de %d intentos. Cancelando.\n", MAX_RETRIES);
-        retry_count = 0;  // Resetear el contador de reintentos
+        // Esperar ACK/NAK sin bloquear la interfaz
+        uint8_t received_byte;
+        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+            if (received_byte == 0x06) {  // ACK recibido
+                printf("ACK recibido! Comando confirmado.\n");
+                update_led_indicator(2, attempt);  // LED verde
+                break;
+            } else if (received_byte == 0x15) {  // NAK recibido
+                printf("NAK recibido! Reintentando...\n");
+                update_led_indicator(3, attempt);  // LED rojo
+            }
+        } else {
+            printf("Tiempo de espera agotado en intento %d.\n", attempt);
+        }
     }
-}
 
-// **Inicializar el timer**
-void init_ack_timer() {
-    esp_timer_create_args_t timer_args = {
-        .callback = &ack_timeout_callback,
-        .name = "ack_timer"
-    };
-    esp_timer_create(&timer_args, &ack_timer);
+    // Liberar memoria asignada para el comando
+    free(command);
+    vTaskDelete(NULL);  // Terminar la tarea
 }
 
 
-// Función para generar y enviar un comando de transacción
+// Generar una solicitud de transacción de venta con el monto ingresado
 void generate_transaction_command(const char *monto) {
     uint8_t STX = 0x02;
     uint8_t ETX = 0x03;
@@ -328,34 +413,27 @@ void generate_transaction_command(const char *monto) {
     char command[256];
     snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto, N_ticket, impresion_campo, msj_status);
 
-    size_t command_length = strlen(command) + 3;  // ETX + LRC
+    size_t command_length = strlen(command) + 3;
     uint8_t *formatted_command = malloc(command_length);
     if (!formatted_command) {
-        printf("Error: No se pudo asignar memoria.\n");
+        printf("Error: No se pudo asignar memoria para el comando.\n");
         free(N_ticket);
         return;
     }
 
     size_t index = 0;
+    formatted_command[index++] = STX;
     memcpy(&formatted_command[index], command, strlen(command));
     index += strlen(command);
-    formatted_command[index++] = ETX;  // Agregar ETX
+    formatted_command[index++] = ETX;
 
     uint8_t lrc = calculate_lrc(formatted_command, index);
-    formatted_command[index++] = lrc;  // Agregar LRC
+    formatted_command[index++] = lrc;
 
-    // Guardar el comando enviado
-    strncpy(last_transaction_command, (const char *)formatted_command, sizeof(last_transaction_command) - 1);
+    // **Crear la tarea para enviar el comando de manera asíncrona**
+    xTaskCreate(transaction_task, "transaction_task", 4096, formatted_command, 2, NULL);
 
-    // Enviar el comando
-    uart_write_bytes(UART_NUM, (const char *)formatted_command, index);
-
-    // Iniciar el timer de 10 segundos
-    retry_count = 0;
-    esp_timer_start_once(ack_timer, TIMEOUT_MS * 1000);
-
-    free(N_ticket);
-    free(formatted_command);
+    free(N_ticket);  // Liberar memoria del ticket
 }
 
 // Evento para confirmar y generar el comando
@@ -363,8 +441,12 @@ static void confirm_mount_event_handler(lv_event_t *e) {
     const char *amount = lv_textarea_get_text(textarea);
 
     if (strlen(amount) > 0) {
-        generate_transaction_command(amount);
+        if(lvgl_lock(-1)) {
         lv_textarea_set_text(textarea, "");
+        lvgl_unlock();
+        }
+        generate_transaction_command(amount);
+
         printf("Monto confirmado: %s\n", amount);
     } else {
         printf("El campo de monto está vacío.\n");
@@ -401,39 +483,66 @@ void create_keypad(void) {
         LV_SYMBOL_BACKSPACE, "0", LV_SYMBOL_NEW_LINE, ""
     };
 
-    // Crear la botonera
+    // Crear la botonera centrada
     lv_obj_t *btnm = lv_btnmatrix_create(lv_scr_act());
-    lv_obj_set_size(btnm, 400, 300);
-    lv_obj_align(btnm, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_set_size(btnm, 250, 300);  // Tamaño estándar
+    lv_obj_align(btnm, LV_ALIGN_CENTER, 0, 20);  // Centrado en la pantalla
+
     lv_btnmatrix_set_map(btnm, btnm_map);
     lv_obj_add_event_cb(btnm, keypad_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+
+    // **Crear el LED en la esquina superior derecha**
+    led_indicator = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(led_indicator, 50, 50);  // Tamaño cuadrado
+    lv_obj_align(led_indicator, LV_ALIGN_TOP_RIGHT, -10, 10);  // Alinear en la esquina superior derecha
+    lv_obj_set_style_bg_color(led_indicator, lv_color_make(200, 200, 200), LV_PART_MAIN);  // Color gris neutro
+
+    // Crear la etiqueta para el número de intentos dentro del LED
+    led_label = lv_label_create(led_indicator);
+    lv_label_set_text(led_label, "0");
+    lv_obj_center(led_label);  // Alinear el texto en el centro del LED
 }
 
+
 // **Procesar los comandos recibidos por UART**
-bool process_uart_data(const uint8_t *data, size_t length) {
+int process_uart_data(const uint8_t *data, size_t length) {
     uint8_t temp_message[UART_BUFFER_SIZE] = {0};
     size_t temp_index = 0;
     char command[5] = {0};
     CommandData current_command = {0};
 
     for (size_t i = 0; i < length; i++) {
+        printf("Byte recibido: 0x%02X\n", data[i]);  // Ver cada byte recibido en HEX
+
+        if (data[i] == 0x06) {
+            printf("ACK recibido. Enviando confirmación...\n");
+            //uart_write_bytes(UART_NUM, "ACK recibido\n", strlen("ACK recibido\n"));
+            return 2;
+        } 
+        else if (data[i] == 0x15) {
+            printf("NAK recibido. Enviando confirmación...\n");
+            uart_write_bytes(UART_NUM, "NAK recibido\n", strlen("NAK recibido\n"));
+            return 3;
+        } 
+
         if (data[i] == 0x02) { // Inicio del comando
             temp_index = 0;
             memset(temp_message, 0, sizeof(temp_message));
             memset(&current_command, 0, sizeof(current_command));
-        } else if (data[i] == 0x03) { // Fin del comando
+        } 
+        else if (data[i] == 0x03) { // Fin del comando
             if (temp_index == 0 || temp_index >= UART_BUFFER_SIZE - 1) {
-                return false; // Comando vacío o demasiado largo
+                return 0; // Comando vacío o demasiado largo
             }
 
             uint8_t lrc_calculated = calculate_lrc(temp_message, temp_index);
             if (i + 1 >= length) {
-                return false; // LRC fuera de rango
+                return 10; // LRC fuera de rango
             }
             uint8_t lrc_received = data[i + 1];
 
             if (lrc_calculated != lrc_received) {
-                return false; // LRC incorrecto
+                return 0; // LRC incorrecto
             }
 
             temp_message[temp_index] = '\0';
@@ -449,42 +558,60 @@ bool process_uart_data(const uint8_t *data, size_t length) {
             }
 
             store_command(&current_command);
-            return true; // Comando procesado correctamente
-        } else { // Datos intermedios
+            return 1; // Comando procesado correctamente
+        } 
+        else { // Datos intermedios
             if (temp_index >= sizeof(temp_message) - 1) {
-                return false; // Buffer lleno, comando inválido
+                return 9; // Buffer lleno, comando inválido
             }
             temp_message[temp_index++] = data[i];
         }
     }
 
-    return false; // Si el bucle termina sin encontrar un fin de comando
+    return 0; // Si el bucle termina sin encontrar un fin de comando
 }
 
 
-
-// **Manejar respuestas UART**
+// **Task para procesar comandos y responder con ACK/NAK**
 static void command_processing_task(void *param) {
     uint8_t command_buffer[UART_BUFFER_SIZE];
 
     while (1) {
+        // Esperar a que un comando esté en la cola
         if (xQueueReceive(command_queue, command_buffer, portMAX_DELAY)) {
             printf("Procesando comando: %s\n", command_buffer);
 
-            // Si es ACK, detener el timer y resetear el contador
-            if (strncmp((char *)command_buffer, "ACK", 3) == 0) {
-                printf("ACK recibido. Deteniendo timer.\n");
-                esp_timer_stop(ack_timer);
-                retry_count = 0;  // Resetear contador
-            } else if (strncmp((char *)command_buffer, "NAK", 3) == 0) {
-                printf("NAK recibido. Reintentando...\n");
-                ack_timeout_callback(NULL);  // Simular un timeout inmediato
+            // Procesar comando y verificar LRC
+            int is_valid = process_uart_data(command_buffer, strlen((char *)command_buffer));
+            const char *response = NULL;
+            if(is_valid == 0)  {
+                printf("Error: LRC incorrecto\n");
+                response = "NAK: LRC incorrecto\n";
+            } else if(is_valid == 1) {
+                printf("Comando procesado correctamente\n");
+                response = "ACK: Comando procesado correctamente\n";
+            } else if(is_valid == 2) {
+                printf("ACK recibido\n");
+                response = "ACK recibido\n";
+            } else if(is_valid == 3) {
+                printf("NAK recibido\n");
+                response = "NAK recibido\n";
+            } else if (is_valid == 9) {
+                printf("Error: Buffer lleno\n");
+                response = "NAK: Buffer lleno\n";
+            } else if (is_valid == 10) {
+                printf("Error: LRC fuera de rango\n");
+                response = "NAK: LRC fuera de rango\n";
+            } else {
+                printf("Error: Comando inválido\n");
+                response = "NAK: Comando inválido\n";
             }
+            
+            // Enviar ACK si es válido, NAK si es inválido
+            uart_write_bytes(UART_NUM, response, strlen(response));
         }
     }
 }
-
-
 
 
 // **Task de recepción de datos UART**
@@ -498,9 +625,18 @@ static void uart_RX_task(void *param) {
             switch (event.type) {
                 case UART_DATA: {
                     while ((bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer) - 1, pdMS_TO_TICKS(10))) > 0) {
-                        data_buffer[bytes_read] = '\0'; 
-                        printf("Mensaje recibido: %s\n", data_buffer);
+                        data_buffer[bytes_read] = '\0';
 
+                        // **Buscar ACK (0x06)**
+                        for (size_t i = 0; i < bytes_read; i++) {
+                            if (data_buffer[i] == 0x06) {
+                                printf("ACK detectado en UART. Enviándolo a la cola.\n");
+                                uint8_t ack_byte = 0x06;
+                                xQueueSend(ack_queue, &ack_byte, portMAX_DELAY);
+                            }
+                        }
+
+                        // Enviar mensaje a la cola de procesamiento
                         if (!xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100))) {
                             printf("Error: no se pudo enviar el mensaje a la cola\n");
                         }
@@ -513,23 +649,9 @@ static void uart_RX_task(void *param) {
             }
         }
 
-        while ((bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer) - 1, 0)) > 0) {
-            data_buffer[bytes_read] = '\0'; 
-            printf("Procesando mensaje fuera de evento: %s\n", data_buffer);
-
-            if (!xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100))) {
-                printf("Error: no se pudo enviar el mensaje a la cola\n");
-            }
-        }
-
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-
-
-
-
-
 
 
 
@@ -731,15 +853,15 @@ void app_main(void)
     // Initialize NVS
     init_nvs();
 
-    init_ack_timer();
-
     // Inicializar UART
     init_uart();
 
 
-    command_queue = xQueueCreate(10, UART_BUFFER_SIZE);
-    if (command_queue == NULL) {
-    printf("Error: no se pudo crear la cola de comandos\n");
+    command_queue = xQueueCreate(10, UART_BUFFER_SIZE); // Cola para comandos recibidos
+    ack_queue = xQueueCreate(5, sizeof(uint8_t));  // Cola para almacenar ACKs
+
+    if (!command_queue || !ack_queue) {
+        printf("Error: No se pudo crear las colas de comandos o ACK.\n");
     }
 
 
