@@ -146,15 +146,13 @@ void lvgl_unlock(void);
 #define LVGL_TASK_STACK_SIZE   (4 * 1024)
 #define LVGL_TASK_PRIORITY     2
 
-static SemaphoreHandle_t lvgl_mux = NULL;   
+static SemaphoreHandle_t lvgl_mux = NULL;   // semaphore for LVGL
 static QueueHandle_t uart_event_queue = NULL; // cola para eventos de UART
 static QueueHandle_t command_queue = NULL; // cola para procesar comandos
-
-// Variable global para recibir el ACK
-static QueueHandle_t ack_queue = NULL;
+static QueueHandle_t ack_queue = NULL; // cola para ACKs
 
 
-static lv_obj_t *textarea;
+static lv_obj_t *textarea; // Objeto de entrada de texto
 static lv_obj_t *led_indicator;  // Objeto del LED
 static lv_obj_t *led_label;  // Etiqueta para el número de intentos
 
@@ -322,7 +320,8 @@ char* generateAlphanumericString(size_t length) {
 static void transaction_task(void *param) {
     uint8_t *command = (uint8_t *)param;
     size_t length = strlen((char *)command);
-
+    xQueueReset(ack_queue); // Limpiar la cola de ACKs
+    
     for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         printf("Intento %d de %d: Enviando comando...\n", attempt, MAX_RETRIES);
         
@@ -338,6 +337,8 @@ static void transaction_task(void *param) {
             if (received_byte == 0x06) {  // ACK recibido
                 printf("ACK recibido! Comando confirmado.\n");
                 update_led_indicator(2, attempt);  // LED verde
+                    xQueueReset(ack_queue);
+
                 break;
             } else if (received_byte == 0x15) {  // NAK recibido
                 printf("NAK recibido! Reintentando...\n");
@@ -354,7 +355,6 @@ static void transaction_task(void *param) {
     free(command);
     vTaskDelete(NULL);  // Terminar la tarea
 }
-
 
 // Generar una solicitud de transacción de venta con el monto ingresado
 void generate_transaction_command(const char *monto) {
@@ -383,7 +383,7 @@ void generate_transaction_command(const char *monto) {
     index += strlen(command);
     formatted_command[index++] = ETX;
 
-    uint8_t lrc = calculate_lrc(formatted_command, index);
+    uint8_t lrc = calculate_lrc(formatted_command+1, index);
     formatted_command[index++] = lrc;
 
     // **Crear la tarea para enviar el comando de manera asíncrona**
@@ -713,22 +713,7 @@ static esp_err_t i2c_master_init(void)
 
     return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
 }
-/*
-void gpio_init(void)
-{
-    //zero-initialize the config structure.
-    gpio_config_t io_conf = {};
-    //disable interrupt
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    //bit mask of the pins, use GPIO6 here
-    io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
-    //set as input mode
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    //enable pull-up mode
-    // io_conf.pull_up_en = 1;
-    gpio_config(&io_conf);
-}
-*/
+
 static void lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 {
     uint16_t touchpad_x[1] = {0};
@@ -848,11 +833,10 @@ void app_main(void)
     // Initialize touch controller
     esp_lcd_touch_handle_t tp = init_touch(panel_handle);
 
-  
     // Initialize LVGL
     lv_disp_t *disp = init_lvgl(panel_handle);
 
-    start_lvgl_task(disp, tp);
+    start_lvgl_task(disp, tp); // Iniciar la tarea de LVGL en core 1 
 
     ESP_LOGI(TAG, "Sistema inicializado. Interfaz lista.");
 
