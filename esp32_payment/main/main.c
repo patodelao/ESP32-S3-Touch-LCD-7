@@ -110,7 +110,7 @@ void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp);
 void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_drv_t *disp_drv);
 bool lvgl_lock(int timeout_ms);
 void lvgl_unlock(void);
-void pulling_task(void *param);
+void init_task(void *param);
 
 
 
@@ -228,8 +228,8 @@ static void init_uart(void) {
     } else {
         printf("Error al instalar el driver UART: %s\n", esp_err_to_name(ret));
     }
-        // Crear una task para manejar el pulling
-    xTaskCreate(pulling_task, "pulling_task", 4096, NULL, 2, NULL);
+        // Crear una task para manejar el polling
+    //xTaskCreate(init_task, "init_task", 4096, NULL, 2, NULL);
 }
 
 
@@ -527,7 +527,7 @@ void process_field(const char *field, int field_number, const char *command, Com
                 strncpy(command_data->terminal_id, field, sizeof(command_data->terminal_id) - 1);
                 break;
         }
-    } else if(strcmp(command, "0100") == 0){ //solicitud de pulling
+    } else if(strcmp(command, "0100") == 0){ //solicitud de polling
         switch (field_number) {
             case 1:
                 strncpy(command_data->command, field, sizeof(command_data->command) - 1);
@@ -859,20 +859,39 @@ static void uart_RX_task(void *param) {
 }
 
 
-// Task para manejar el pulling
-void pulling_task(void *param) {
-    uint8_t pulling_command[] = {0x02, '0', '1', '0', '0', 0x03};
-    pulling_command[5] = calculate_lrc(pulling_command + 1, 4);
+// Task para manejar el polling
+void polling_task(void *param) {
+    uint8_t polling_command[] = {0x02, '0', '1', '0', '0', 0x03};
+    polling_command[5] = calculate_lrc(polling_command + 1, 4);
+    uint8_t init_command[] = {0x02, '0', '0', '7', '0', 0x03};
+    init_command[5] = calculate_lrc(init_command + 1, 4);
     
     for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        printf("Intento %d de %d: Enviando comando de pulling...\n", attempt, MAX_RETRIES);
-        uart_write_bytes(UART_NUM, (const char *)pulling_command, sizeof(pulling_command));
+        printf("Intento %d de %d: Enviando comando de polling...\n", attempt, MAX_RETRIES);
+        uart_write_bytes(UART_NUM, (const char *)polling_command, sizeof(polling_command));
         
         uint8_t received_byte;
         if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
             if (received_byte == 0x06) {
-                printf("ACK recibido! Pulling exitoso.\n");
+                printf("ACK recibido! polling exitoso.\n");
                 update_led_indicator(2, attempt);
+                
+                // Enviar comando 0070 para ejecutar inicialización
+                printf("Enviando comando de inicialización (0070)...\n");
+                uart_write_bytes(UART_NUM, (const char *)init_command, sizeof(init_command));
+                
+                if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+                    if (received_byte == 0x06) {
+                        printf("ACK recibido! Inicialización exitosa.\n");
+                        update_led_indicator(2, attempt);
+                    } else {
+                        printf("NAK recibido en inicialización. Error de COM con POS.\n");
+                        update_led_indicator(3, attempt);
+                    }
+                } else {
+                    printf("Timeout esperando ACK en inicialización. Error de COM con POS.\n");
+                    update_led_indicator(3, attempt);
+                }
                 vTaskDelete(NULL);
                 return;
             } else {
@@ -890,6 +909,56 @@ void pulling_task(void *param) {
 }
 
 
+
+
+void init_task(void *param) {
+    uint8_t init_command[] = {0x02, '0', '0', '7', '0', 0x03};
+    init_command[5] = calculate_lrc(init_command + 1, 4);
+    uint8_t pulling_command[] = {0x02, '0', '1', '0', '0', 0x03};
+    pulling_command[5] = calculate_lrc(pulling_command + 1, 4);
+    
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        printf("Intento %d de %d: Enviando comando de inicialización (0070)...\n", attempt, MAX_RETRIES);
+        uart_write_bytes(UART_NUM, (const char *)init_command, sizeof(init_command));
+        
+        uint8_t received_byte;
+        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+            if (received_byte == 0x06) {
+                printf("ACK recibido! Inicialización exitosa.\n");
+                update_led_indicator(2, attempt);
+                
+                // Enviar comando de pulling
+                printf("Enviando comando de pulling (0100)...\n");
+                uart_write_bytes(UART_NUM, (const char *)pulling_command, sizeof(pulling_command));
+                
+                if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+                    if (received_byte == 0x06) {
+                        printf("ACK recibido! Pulling exitoso.\n");
+                        update_led_indicator(2, attempt);
+                    } else {
+                        printf("NAK recibido en pulling. Error de COM con POS.\n");
+                        update_led_indicator(3, attempt);
+                    }
+                } else {
+                    printf("Timeout esperando ACK en pulling. Error de COM con POS.\n");
+                    update_led_indicator(3, attempt);
+                }
+                vTaskDelete(NULL);
+                return;
+            } else {
+                printf("NAK recibido en inicialización. Error de COM con POS.\n");
+                update_led_indicator(3, attempt);
+                break;
+            }
+        } else {
+            printf("Timeout esperando ACK en inicialización. Error de COM con POS.\n");
+            update_led_indicator(3, attempt);
+            break;
+        }
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelete(NULL);
+}
 
 
 
@@ -1086,7 +1155,7 @@ void app_main(void)
     // Iniciar la tarea de eventos UART en el Core 0
     xTaskCreatePinnedToCore(uart_RX_task, "uart_RX_task", 4096, NULL, 2, NULL, 0); // Core 0
     xTaskCreatePinnedToCore(command_processing_task, "Command Task", 4096, NULL, 1, NULL, tskNO_AFFINITY); // Sin núcleo fijo
-
+    xTaskCreatePinnedToCore(init_task, "init_task", 4096, NULL, 2, NULL, 1);
     
 
     static lv_disp_draw_buf_t disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
