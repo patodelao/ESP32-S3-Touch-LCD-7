@@ -55,24 +55,39 @@ static const char *TAG = "demo";
 
 static lv_obj_t *received_label;
 
+#include <stdint.h>
+
 typedef struct {
-    char command[5];
-    char monto[10];
-    char ticket_number[21];
-    char impresion[1];
-    char enviar_msj[1];
-    char codigo_respuesta[3];
-    char comercio[13];
-    char terminal_id[9];
-    char autorizacion[16];
-    char ultimos_4[5];
-    char operacion[16];
-    char tipo_tarjeta[16];
-    char fecha_contable[9];
-    char numero_cuenta[16];
-    char abreviacion_tarjeta[16];
-    char fecha_transaccion[9];
-    char hora_transaccion[7];
+    char command[5];               // Código de comando
+    char codigo_respuesta[3];      // 2 caracteres + '\0'
+    char codigo_comercio[13];      // 12 caracteres + '\0'
+    char terminal_id[9];           // 8 caracteres + '\0'
+    char ticket_number[21];        // 20 caracteres + '\0'
+    char autorizacion[7];          // 6 caracteres + '\0'
+    char monto[10];                // 9 caracteres + '\0'
+    char ultimos_4[5];             // 4 caracteres + '\0'
+    char operacion[7];             // 6 caracteres + '\0'
+    char tipo_tarjeta[3];          // 2 caracteres + '\0'
+    char fecha_transaccion[9];     // 8 caracteres + '\0'
+    char hora_transaccion[7];      // 6 caracteres + '\0'
+    char comercio_prestador[13];   // 12 caracteres + '\0' (para ventas multicomercio)
+    char abreviacion_tarjeta[5];   // 4 caracteres + '\0'
+
+    // Datos opcionales para tarjeta de débito
+    char fecha_contable[7];        // 6 caracteres + '\0'
+    char numero_cuenta[20];        // 19 caracteres + '\0'
+
+    // Datos opcionales para cuotas
+    char tipo_cuota[3];            // 2 caracteres + '\0'
+    char numero_cuota[3];          // 2 caracteres + '\0'
+    char monto_cuota[13];          // 12 caracteres + '\0'
+    char glosa_tipo_cuota[31];     // 30 caracteres + '\0'
+
+    // Campo de impresión
+    char campo_impresion[1];          // 0 o 1 (indica si incluye impresión)
+    char impresion_formateada[1441]; // Hasta 1440 caracteres + '\0'
+
+    char enviar_msj[1];               // 0 o 1 (indica si se debe enviar mensaje)
 } CommandData;
 
 CommandData command_history[MAX_COMMANDS];
@@ -223,7 +238,7 @@ void store_command(const CommandData *command) {
 }
 
 void process_field(const char *field, int field_number, const char *command, CommandData *command_data) {
-    if (strcmp(command, "0200") == 0) {
+    if (strcmp(command, "0200") == 0) {  // solicitud de transacción de venta
         switch (field_number) {
             case 1:
                 strncpy(command_data->command, field, sizeof(command_data->command) - 1);
@@ -235,13 +250,13 @@ void process_field(const char *field, int field_number, const char *command, Com
                 strncpy(command_data->ticket_number, field, sizeof(command_data->ticket_number) - 1);
                 break;
             case 4:
-                strncpy(command_data->impresion, field, sizeof(command_data->impresion) - 1);
+                strncpy(command_data->campo_impresion, field, sizeof(command_data->campo_impresion) - 1);
                 break;
             case 5:
                 strncpy(command_data->enviar_msj, field, sizeof(command_data->enviar_msj) - 1);
                 break;
         }
-    } else if (strcmp(command, "0210") == 0) {
+    } else if (strcmp(command, "0210") == 0) { // respuesta de solicitud de transanción venta
         switch (field_number) {
             case 1:
                 strncpy(command_data->command, field, sizeof(command_data->command) - 1);
@@ -250,7 +265,7 @@ void process_field(const char *field, int field_number, const char *command, Com
                 strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
                 break;
             case 3:
-                strncpy(command_data->comercio, field, sizeof(command_data->comercio) - 1);
+                strncpy(command_data->comercio_prestador, field, sizeof(command_data->comercio_prestador) - 1);
                 break;
             case 4:
                 strncpy(command_data->terminal_id, field, sizeof(command_data->terminal_id) - 1);
@@ -289,8 +304,235 @@ void process_field(const char *field, int field_number, const char *command, Com
                 strncpy(command_data->hora_transaccion, field, sizeof(command_data->hora_transaccion) - 1);
                 break;
         }
+    } else if (strcmp(command, "0270") == 0) { // solicitud de venta
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->monto, field, sizeof(command_data->monto) - 1);
+                break;
+            case 3:
+                strncpy(command_data->ticket_number, field, sizeof(command_data->ticket_number) - 1);
+                break;
+            case 4:
+                strncpy(command_data->campo_impresion, field, sizeof(command_data->campo_impresion) - 1);
+                break;
+            case 5:
+                strncpy(command_data->enviar_msj, field, sizeof(command_data->enviar_msj) - 1);
+                break;
+            case 6:
+                strncpy(command_data->comercio_prestador, field, sizeof(command_data->comercio_prestador) - 1);
+                break;
+            case 7:
+                strncpy(command_data->monto, field, sizeof(command_data->monto) - 1);
+                break;
+        }
+    } else if (strcmp(command, "0271") == 0) {
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
+                break;
+            case 3:
+                strncpy(command_data->comercio_prestador, field, sizeof(command_data->comercio_prestador) - 1);
+                break;
+            case 4:
+                strncpy(command_data->terminal_id, field, sizeof(command_data->terminal_id) - 1);
+                break;
+            case 5:
+                strncpy(command_data->ticket_number, field, sizeof(command_data->ticket_number) - 1);
+                break;
+            case 6:
+                strncpy(command_data->monto, field, sizeof(command_data->monto) - 1);
+                break;
+            case 7:
+                strncpy(command_data->ultimos_4, field, sizeof(command_data->ultimos_4) - 1);
+                break;
+            case 8:
+                strncpy(command_data->operacion, field, sizeof(command_data->operacion) - 1);
+                break;
+            case 9:
+                strncpy(command_data->tipo_tarjeta, field, sizeof(command_data->tipo_tarjeta) - 1);
+                break;
+            case 10:
+                strncpy(command_data->fecha_contable, field, sizeof(command_data->fecha_contable) - 1);
+                break;
+            case 11:
+                strncpy(command_data->numero_cuenta, field, sizeof(command_data->numero_cuenta) - 1);
+                break;
+            case 12:
+                strncpy(command_data->abreviacion_tarjeta, field, sizeof(command_data->abreviacion_tarjeta) - 1);
+                break;
+            case 13:
+                strncpy(command_data->fecha_transaccion, field, sizeof(command_data->fecha_transaccion) - 1);
+                break;
+            case 14:
+                strncpy(command_data->hora_transaccion, field, sizeof(command_data->hora_transaccion) - 1);
+                break;
+            case 15:
+                strncpy(command_data->comercio_prestador, field, sizeof(command_data->comercio_prestador) - 1); //comercio prestador
+                break;
+            case 16:
+                strncpy(command_data->impresion_formateada, field, sizeof(command_data->impresion_formateada) - 1); //campo de impresión
+                break;
+            case 17:
+                strncpy(command_data->tipo_cuota, field, sizeof(command_data->tipo_cuota) - 1);
+                break;
+            case 18:
+                strncpy(command_data->numero_cuota, field, sizeof(command_data->numero_cuota) - 1);
+                break;
+            case 19:
+                strncpy(command_data->monto_cuota, field, sizeof(command_data->monto_cuota) - 1);
+                break;
+            case 20:
+                strncpy(command_data->glosa_tipo_cuota, field, sizeof(command_data->glosa_tipo_cuota) - 1);
+                break;
+        }
+    } else if (strcmp(command, "0250") == 0) { //datos de última venta
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2: 
+                strncpy(command_data->campo_impresion, field, sizeof(command_data->campo_impresion) - 1);
+                break;
+        }
+    } else if (strcmp(command, "0260") == 0) { // respues a solicitud de datos de última venta
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2: 
+                strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
+                break;
+            case 3: 
+                strncpy(command_data->comercio_prestador, field, sizeof(command_data->comercio_prestador) - 1);
+                break;
+            case 4: 
+                strncpy(command_data->terminal_id, field, sizeof(command_data->terminal_id) - 1);
+                break;
+            case 5: 
+                strncpy(command_data->ticket_number, field, sizeof(command_data->ticket_number) - 1);
+                break;
+            case 6: 
+                strncpy(command_data->autorizacion, field, sizeof(command_data->autorizacion) - 1);
+                break;
+            case 7: 
+                strncpy(command_data->monto, field, sizeof(command_data->monto) - 1);
+                break;
+            case 8: 
+                strncpy(command_data->ultimos_4, field, sizeof(command_data->ultimos_4) - 1);
+                break;
+            case 9: 
+                strncpy(command_data->operacion, field, sizeof(command_data->operacion) - 1);
+                break;
+            case 10: 
+                strncpy(command_data->tipo_tarjeta, field, sizeof(command_data->tipo_tarjeta) - 1);
+                break;
+            case 11: 
+                strncpy(command_data->fecha_contable, field, sizeof(command_data->fecha_contable) - 1);
+                break;
+            case 12: 
+                strncpy(command_data->numero_cuenta, field, sizeof(command_data->numero_cuenta) - 1);
+                break;
+            case 13: 
+                strncpy(command_data->abreviacion_tarjeta, field, sizeof(command_data->abreviacion_tarjeta) - 1);
+                break;
+            case 14: 
+                strncpy(command_data->fecha_transaccion, field, sizeof(command_data->fecha_transaccion) - 1);
+                break;
+            case 15: 
+                strncpy(command_data->hora_transaccion, field, sizeof(command_data->hora_transaccion) - 1);
+                break;
+            case 16:
+                strncpy(command_data->impresion_formateada, field, sizeof(command_data->impresion_formateada) - 1);
+                break;
+            case 17:
+                strncpy(command_data->tipo_cuota, field, sizeof(command_data->tipo_cuota) - 1);
+                break;
+            case 18:
+                strncpy(command_data->numero_cuota, field, sizeof(command_data->numero_cuota) - 1);
+                break;
+            case 19:
+                strncpy(command_data->monto_cuota, field, sizeof(command_data->monto_cuota) - 1);
+                break;
+            case 20:
+                strncpy(command_data->glosa_tipo_cuota, field, sizeof(command_data->glosa_tipo_cuota) - 1);
+                break;
+            
+        }
+    } else if(strcmp(command, "0900") == 0){    // solicitud mensajes intermedios desde el POS para una venta
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
+                break;
+        }
+    } else if(strcmp(command, "0500") == 0){    // solicitud de cierre
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
+                break;
+        }
+    } else if(strcmp(command, "0510") == 0){    // respuesta de solicitud de cierre
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
+                break;
+            case 3:
+                strncpy(command_data->comercio_prestador, field, sizeof(command_data->comercio_prestador) - 1);
+                break;
+            case 4:
+                strncpy(command_data->terminal_id, field, sizeof(command_data->terminal_id) - 1);
+                break;
+            case 5:
+                strncpy(command_data->impresion_formateada, field, sizeof(command_data->impresion_formateada) - 1);
+                break;
+        }
+    } else if(strcmp(command, "0800") == 0){ //solicitud de carga de llaves
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+        }
+    } else if(strcmp(command, "0810") == 0){ //respuesta de solicitud de carga de llaves
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->codigo_respuesta, field, sizeof(command_data->codigo_respuesta) - 1);
+                break;
+            case 3:
+                strncpy(command_data->comercio_prestador, field, sizeof(command_data->comercio_prestador) - 1);
+                break;
+            case 4:
+                strncpy(command_data->terminal_id, field, sizeof(command_data->terminal_id) - 1);
+                break;
+        }
+    } else if(strcmp(command, "0100") == 0){ //solicitud de pulling
+        switch (field_number) {
+            case 1:
+                strncpy(command_data->command, field, sizeof(command_data->command) - 1);
+                break;
+            case 2:
+                strncpy(command_data->campo_impresion, field, sizeof(command_data->campo_impresion) - 1);
+                break;
+        }
     }
 }
+
 
 
 // Función para inicializar el sistema de almacenamiento no volátil
@@ -363,11 +605,11 @@ void generate_transaction_command(const char *monto) {
 
     char *N_ticket = generateAlphanumericString(20);
     const char *codigo_cmd = "0200";
-    const char *impresion_campo = "1";
+    const char *campo_impresion_campo = "1";
     const char *msj_status = "1";
 
     char command[256];
-    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto, N_ticket, impresion_campo, msj_status);
+    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto, N_ticket, campo_impresion_campo, msj_status);
 
     size_t command_length = strlen(command) + 3;
     uint8_t *formatted_command = malloc(command_length);
@@ -401,7 +643,7 @@ static void confirm_mount_event_handler(lv_event_t *e) {
         lv_textarea_set_text(textarea, "");
         lvgl_unlock();
         }
-        generate_transaction_command(amount);
+        generate_transaction_command(amount); // se envía comando por UART
 
         printf("Monto confirmado: %s\n", amount);
     } else {
