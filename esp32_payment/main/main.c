@@ -859,58 +859,10 @@ static void uart_RX_task(void *param) {
 }
 
 
-// Task para manejar el polling
-void polling_task(void *param) {
-    uint8_t polling_command[] = {0x02, '0', '1', '0', '0', 0x03};
-    polling_command[5] = calculate_lrc(polling_command + 1, 4);
-    uint8_t init_command[] = {0x02, '0', '0', '7', '0', 0x03};
-    init_command[5] = calculate_lrc(init_command + 1, 4);
-    
-    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        printf("Intento %d de %d: Enviando comando de polling...\n", attempt, MAX_RETRIES);
-        uart_write_bytes(UART_NUM, (const char *)polling_command, sizeof(polling_command));
-        
-        uint8_t received_byte;
-        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
-            if (received_byte == 0x06) {
-                printf("ACK recibido! polling exitoso.\n");
-                update_led_indicator(2, attempt);
-                
-                // Enviar comando 0070 para ejecutar inicialización
-                printf("Enviando comando de inicialización (0070)...\n");
-                uart_write_bytes(UART_NUM, (const char *)init_command, sizeof(init_command));
-                
-                if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
-                    if (received_byte == 0x06) {
-                        printf("ACK recibido! Inicialización exitosa.\n");
-                        update_led_indicator(2, attempt);
-                    } else {
-                        printf("NAK recibido en inicialización. Error de COM con POS.\n");
-                        update_led_indicator(3, attempt);
-                    }
-                } else {
-                    printf("Timeout esperando ACK en inicialización. Error de COM con POS.\n");
-                    update_led_indicator(3, attempt);
-                }
-                vTaskDelete(NULL);
-                return;
-            } else {
-                printf("NAK recibido. Error de inicialización de COM con POS.\n");
-                update_led_indicator(3, attempt);
-                break;
-            }
-        } else {
-            printf("Timeout esperando ACK. Error de inicialización de COM con POS.\n");
-            update_led_indicator(3, attempt);
-            break;
-        }
-    }
-    vTaskDelete(NULL);
-}
 
 
 
-
+// **Task para inicializar la comunicación con el POS**
 void init_task(void *param) {
     uint8_t init_command[] = {0x02, '0', '0', '7', '0', 0x03};
     init_command[5] = calculate_lrc(init_command + 1, 4);
@@ -956,7 +908,6 @@ void init_task(void *param) {
             break;
         }
     }
-    vTaskDelay(pdMS_TO_TICKS(100));
     vTaskDelete(NULL);
 }
 
