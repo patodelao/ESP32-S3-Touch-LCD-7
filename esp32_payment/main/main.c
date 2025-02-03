@@ -110,6 +110,7 @@ void start_lvgl_task(lv_disp_t *disp, esp_lcd_touch_handle_t tp);
 void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_drv_t *disp_drv);
 bool lvgl_lock(int timeout_ms);
 void lvgl_unlock(void);
+void pulling_task(void *param);
 
 
 
@@ -174,6 +175,9 @@ static lv_obj_t *led_label;  // Etiqueta para el número de intentos
 
 
 
+
+
+
 // **Función para actualizar el indicador LED con el estado actual**
 void update_led_indicator(int status, int attempts) {
     if (lvgl_lock(-1)) {
@@ -224,6 +228,8 @@ static void init_uart(void) {
     } else {
         printf("Error al instalar el driver UART: %s\n", esp_err_to_name(ret));
     }
+        // Crear una task para manejar el pulling
+    xTaskCreate(pulling_task, "pulling_task", 4096, NULL, 2, NULL);
 }
 
 
@@ -853,7 +859,35 @@ static void uart_RX_task(void *param) {
 }
 
 
-
+// Task para manejar el pulling
+void pulling_task(void *param) {
+    uint8_t pulling_command[] = {0x02, '0', '1', '0', '0', 0x03};
+    pulling_command[5] = calculate_lrc(pulling_command + 1, 4);
+    
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        printf("Intento %d de %d: Enviando comando de pulling...\n", attempt, MAX_RETRIES);
+        uart_write_bytes(UART_NUM, (const char *)pulling_command, sizeof(pulling_command));
+        
+        uint8_t received_byte;
+        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+            if (received_byte == 0x06) {
+                printf("ACK recibido! Pulling exitoso.\n");
+                update_led_indicator(2, attempt);
+                vTaskDelete(NULL);
+                return;
+            } else {
+                printf("NAK recibido. Error de inicialización de COM con POS.\n");
+                update_led_indicator(3, attempt);
+                break;
+            }
+        } else {
+            printf("Timeout esperando ACK. Error de inicialización de COM con POS.\n");
+            update_led_indicator(3, attempt);
+            break;
+        }
+    }
+    vTaskDelete(NULL);
+}
 
 
 
