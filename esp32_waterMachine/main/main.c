@@ -1210,49 +1210,25 @@ static void create_new_product(lv_event_t * e)
 
 
 
-void lv_example_menu_4(void)
-{
-    /*Create a menu object*/
+void product_config(void){
+    
+    /* Crear el menú */
     menu = lv_menu_create(lv_scr_act());
     lv_obj_set_size(menu, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
     lv_obj_center(menu);
 
-    lv_obj_t * cont;
-    lv_obj_t * label;
-
-    /*Create a sub page*/
-    sub_page = lv_menu_page_create(menu, NULL);  // Asigna a la variable global
-
-    lv_obj_t * name_ta = create_textarea(sub_page, "Nombre");
-    lv_obj_t * price_ta = create_textarea(sub_page, "Precio");
-    lv_obj_t * desc_ta = create_textarea(sub_page, "Descripción");
-
-    lv_obj_t * save_btn = lv_btn_create(sub_page);
-    label = lv_label_create(save_btn);
-    lv_label_set_text(label, "Guardar");
-    lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, sub_page);
-
-    lv_obj_t * clear_btn = lv_btn_create(sub_page);
-    label = lv_label_create(clear_btn);
-    lv_label_set_text(label, "Limpiar");
-    lv_obj_add_event_cb(clear_btn, clear_textareas, LV_EVENT_CLICKED, sub_page);
-
-    lv_obj_t * exit_btn = lv_btn_create(sub_page);
-    label = lv_label_create(exit_btn);
-    lv_label_set_text(label, "Salir sin guardar");
-    lv_obj_add_event_cb(exit_btn, exit_without_saving_event_cb, LV_EVENT_CLICKED, NULL);
-
-    /*Create a main page*/
+    /* Crear la página principal */
     main_page = lv_menu_page_create(menu, NULL);
 
-    cont = lv_menu_cont_create(main_page);
-    label = lv_label_create(cont);
-    lv_label_set_text(label, "Producto 1");
-    lv_menu_set_load_page_event(menu, cont, sub_page);
+    /* Agregar un título fijo en la parte superior */
+    lv_obj_t * title_label = lv_label_create(main_page);
+    lv_label_set_text(title_label, "Configuración de productos:");
+    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 10); // Posiciona el título en la parte superior
 
+    /* Establecer la página principal */
     lv_menu_set_page(menu, main_page);
 
-    /* Usar variables globales en lugar de declarar variables locales */
+    /* Botón flotante para agregar productos */
     float_btn_add = lv_btn_create(lv_scr_act());
     lv_obj_set_size(float_btn_add, 50, 50);
     lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_FLOATING);
@@ -1262,6 +1238,7 @@ void lv_example_menu_4(void)
     lv_obj_set_style_bg_img_src(float_btn_add, LV_SYMBOL_PLUS, 0);
     lv_obj_set_style_text_font(float_btn_add, lv_theme_get_font_large(float_btn_add), 0);
 
+    /* Botón flotante para eliminar el último producto */
     float_btn_del = lv_btn_create(lv_scr_act());
     lv_obj_set_size(float_btn_del, 50, 50);
     lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_FLOATING);
@@ -1271,6 +1248,7 @@ void lv_example_menu_4(void)
     lv_obj_set_style_bg_img_src(float_btn_del, LV_SYMBOL_MINUS, 0);
     lv_obj_set_style_text_font(float_btn_del, lv_theme_get_font_large(float_btn_del), 0);
 
+    /* Botón flotante para eliminar todos los productos */
     float_btn_del_all = lv_btn_create(lv_scr_act());
     lv_obj_set_size(float_btn_del_all, 50, 50);
     lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_FLOATING);
@@ -1280,7 +1258,7 @@ void lv_example_menu_4(void)
     lv_obj_set_style_bg_img_src(float_btn_del_all, LV_SYMBOL_TRASH, 0);
     lv_obj_set_style_text_font(float_btn_del_all, lv_theme_get_font_large(float_btn_del_all), 0);
 
-    /* Add event handler for page switching */
+    /* Agregar evento para cambio de páginas */
     lv_obj_add_event_cb(menu, menu_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
@@ -1352,7 +1330,7 @@ void app_main(void)
 
     if (lvgl_lock(-1)) {
         lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
-        lv_example_menu_4();  // Crea la interfaz de menú        
+        product_config();  // Crea la interfaz de menú        
         lvgl_unlock();
     }
 
