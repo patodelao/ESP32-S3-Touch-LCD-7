@@ -1044,75 +1044,51 @@ static void lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 #define MAX_ITEMS 10 // Define el número máximo de ítems que quieres permitir
 
 static uint32_t btn_cnt = 1;
 static lv_obj_t * main_page;
+static lv_obj_t * sub_page;
 static lv_obj_t * menu;
 static lv_obj_t * cont_arr[MAX_ITEMS]; // Arreglo para almacenar las referencias de los contenedores
 static uint32_t cont_index = 0;
+static lv_obj_t *float_btn_add;
+static lv_obj_t *float_btn_del;
+static lv_obj_t *float_btn_del_all;
 
-static void float_button_event_cb(lv_event_t * e)
+
+static void save_button_event_cb(lv_event_t * e)
 {
-    if (cont_index >= MAX_ITEMS) {
-        // Opcional: puedes añadir un mensaje de error o un comportamiento cuando se alcance el máximo
-        printf("No se pueden añadir más items\n");
+    lv_obj_t * sub_page = lv_event_get_user_data(e);
+    lv_obj_t * name_ta = lv_obj_get_child(sub_page, 0);
+    const char * name = lv_textarea_get_text(name_ta);
+
+    if (strlen(name) == 0) {
+        printf("El nombre no puede estar vacío\n");
         return;
     }
 
-    btn_cnt++;
-
-    lv_obj_t * cont;
-    lv_obj_t * label;
-
-    lv_obj_t * sub_page = lv_menu_page_create(menu, NULL);
-
-    cont = lv_menu_cont_create(sub_page);
-    label = lv_label_create(cont);
-    lv_label_set_text_fmt(label, "Hello, I am hiding inside %"LV_PRIu32"", btn_cnt);
-
-    cont = lv_menu_cont_create(main_page);
-    label = lv_label_create(cont);
-    lv_label_set_text_fmt(label, "Producto %"LV_PRIu32"", btn_cnt);
-    lv_menu_set_load_page_event(menu, cont, sub_page);
-
-    lv_obj_scroll_to_view_recursive(cont, LV_ANIM_ON);
-
-    cont_arr[cont_index] = cont; // Guardar referencia al contenedor en el arreglo
-    cont_index++;
+    // Buscar el contenedor asociado a la subpágina actual y actualizar su nombre
+    for (uint32_t i = 0; i < cont_index; i++) {
+        if (lv_menu_get_cur_main_page(menu) == sub_page) {
+            lv_obj_t * label = lv_obj_get_child(cont_arr[i], 0);
+            lv_label_set_text(label, name);
+            return;
+        }
+    }
 }
+
+
 
 static void delete_last_item(lv_event_t * e)
 {
     if (cont_index == 0) {
-        // Opcional: puedes añadir un mensaje de error o un comportamiento cuando no hay ítems para eliminar
         printf("No hay items para eliminar\n");
         return;
     }
 
     lv_obj_del(cont_arr[cont_index - 1]); // Eliminar el último contenedor añadido
-    cont_arr[cont_index - 1] = NULL; // Opcional: limpiar la referencia en el arreglo
+    cont_arr[cont_index - 1] = NULL; // Limpiar la referencia en el arreglo
     cont_index--;
     btn_cnt--;
 }
@@ -1127,6 +1103,105 @@ static void delete_all_items(lv_event_t * e)
     btn_cnt = 1;
 }
 
+static void text_area_focused(lv_event_t * e)
+{
+    lv_obj_t * kb = lv_event_get_user_data(e);
+    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void text_area_defocused(lv_event_t * e)
+{
+    lv_obj_t * kb = lv_event_get_user_data(e);
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+}
+
+static lv_obj_t * create_textarea(lv_obj_t * parent, const char * placeholder)
+{
+    lv_obj_t * ta = lv_textarea_create(parent);
+    lv_textarea_set_placeholder_text(ta, placeholder);
+    lv_textarea_set_one_line(ta, true);
+
+    lv_obj_t * kb = lv_keyboard_create(lv_scr_act());
+    lv_keyboard_set_textarea(kb, ta);
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(ta, text_area_focused, LV_EVENT_FOCUSED, kb);
+    lv_obj_add_event_cb(ta, text_area_defocused, LV_EVENT_DEFOCUSED, kb);
+
+    return ta;
+}
+
+static void clear_textareas(lv_event_t * e)
+{
+    lv_obj_t * sub_page = lv_event_get_user_data(e);
+    lv_obj_t * name_ta = lv_obj_get_child(sub_page, 0);
+    lv_obj_t * price_ta = lv_obj_get_child(sub_page, 1);
+    lv_obj_t * desc_ta = lv_obj_get_child(sub_page, 2);
+    
+    lv_textarea_set_text(name_ta, "");
+    lv_textarea_set_text(price_ta, "");
+    lv_textarea_set_text(desc_ta, "");
+}
+
+static void exit_without_saving_event_cb(lv_event_t * e)
+{
+    lv_menu_set_page(menu, main_page);
+}
+/* Event callback for menu page change */
+void menu_event_cb(lv_event_t * e)
+{
+    lv_obj_t * menu = lv_event_get_target(e);
+    lv_obj_t * active_page = lv_menu_get_cur_main_page(menu);
+    
+    if (active_page == sub_page) {
+        lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_clear_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void create_new_product(lv_event_t * e)
+{
+    if (cont_index >= MAX_ITEMS) {
+        printf("No se pueden añadir más productos\n");
+        return;
+    }
+
+    // Crear una nueva subpágina para el producto
+    lv_obj_t * new_sub_page = lv_menu_page_create(menu, NULL);
+
+    lv_obj_t * name_ta = create_textarea(new_sub_page, "Nombre");
+    lv_obj_t * price_ta = create_textarea(new_sub_page, "Precio");
+    lv_obj_t * desc_ta = create_textarea(new_sub_page, "Descripción");
+
+    lv_obj_t * save_btn = lv_btn_create(new_sub_page);
+    lv_obj_t * label = lv_label_create(save_btn);
+    lv_label_set_text(label, "Guardar");
+    lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, new_sub_page);
+
+    // Crear contenedor en la página principal con nombre predeterminado
+    lv_obj_t * cont = lv_menu_cont_create(main_page);
+    lv_obj_t * cont_label = lv_label_create(cont);
+
+    static uint32_t product_count = 1;
+    static char default_name[20];
+    snprintf(default_name, sizeof(default_name), "Producto %" PRIu32, product_count++);
+
+    lv_label_set_text(cont_label, default_name);
+    lv_menu_set_load_page_event(menu, cont, new_sub_page);
+
+    lv_obj_scroll_to_view_recursive(cont, LV_ANIM_ON);
+
+    // Guardar la referencia del contenedor en el arreglo
+    cont_arr[cont_index] = cont;
+    cont_index++;
+}
+
+
+
 void lv_example_menu_4(void)
 {
     /*Create a menu object*/
@@ -1138,11 +1213,26 @@ void lv_example_menu_4(void)
     lv_obj_t * label;
 
     /*Create a sub page*/
-    lv_obj_t * sub_page = lv_menu_page_create(menu, NULL);
+    sub_page = lv_menu_page_create(menu, NULL);  // Asigna a la variable global
 
-    cont = lv_menu_cont_create(sub_page);
-    label = lv_label_create(cont);
-    lv_label_set_text(label, "Hello, I am hiding inside the first item");
+    lv_obj_t * name_ta = create_textarea(sub_page, "Nombre");
+    lv_obj_t * price_ta = create_textarea(sub_page, "Precio");
+    lv_obj_t * desc_ta = create_textarea(sub_page, "Descripción");
+
+    lv_obj_t * save_btn = lv_btn_create(sub_page);
+    label = lv_label_create(save_btn);
+    lv_label_set_text(label, "Guardar");
+    lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, sub_page);
+
+    lv_obj_t * clear_btn = lv_btn_create(sub_page);
+    label = lv_label_create(clear_btn);
+    lv_label_set_text(label, "Limpiar");
+    lv_obj_add_event_cb(clear_btn, clear_textareas, LV_EVENT_CLICKED, sub_page);
+
+    lv_obj_t * exit_btn = lv_btn_create(sub_page);
+    label = lv_label_create(exit_btn);
+    lv_label_set_text(label, "Salir sin guardar");
+    lv_obj_add_event_cb(exit_btn, exit_without_saving_event_cb, LV_EVENT_CLICKED, NULL);
 
     /*Create a main page*/
     main_page = lv_menu_page_create(menu, NULL);
@@ -1154,36 +1244,43 @@ void lv_example_menu_4(void)
 
     lv_menu_set_page(menu, main_page);
 
-    /*Create floating btn for adding items*/
-    lv_obj_t * float_btn_add = lv_btn_create(lv_scr_act());
+    /* Usar variables globales en lugar de declarar variables locales */
+    float_btn_add = lv_btn_create(lv_scr_act());
     lv_obj_set_size(float_btn_add, 50, 50);
     lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_FLOATING);
     lv_obj_align(float_btn_add, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
-    lv_obj_add_event_cb(float_btn_add, float_button_event_cb, LV_EVENT_CLICKED, menu);
+    lv_obj_add_event_cb(float_btn_add, create_new_product, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_add, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_add, LV_SYMBOL_PLUS, 0);
     lv_obj_set_style_text_font(float_btn_add, lv_theme_get_font_large(float_btn_add), 0);
 
-    /*Create floating btn for deleting the last item*/
-    lv_obj_t * float_btn_del = lv_btn_create(lv_scr_act());
+    float_btn_del = lv_btn_create(lv_scr_act());
     lv_obj_set_size(float_btn_del, 50, 50);
     lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(float_btn_del, LV_ALIGN_BOTTOM_RIGHT, -70, -10); // Colocar este botón a la izquierda del botón de agregar
+    lv_obj_align(float_btn_del, LV_ALIGN_BOTTOM_RIGHT, -70, -10);
     lv_obj_add_event_cb(float_btn_del, delete_last_item, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del, LV_SYMBOL_MINUS, 0);
     lv_obj_set_style_text_font(float_btn_del, lv_theme_get_font_large(float_btn_del), 0);
 
-    /*Create floating btn for deleting all items*/
-    lv_obj_t * float_btn_del_all = lv_btn_create(lv_scr_act());
+    float_btn_del_all = lv_btn_create(lv_scr_act());
     lv_obj_set_size(float_btn_del_all, 50, 50);
     lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(float_btn_del_all, LV_ALIGN_BOTTOM_RIGHT, -130, -10); // Colocar este botón a la izquierda del botón de eliminar el último ítem
+    lv_obj_align(float_btn_del_all, LV_ALIGN_BOTTOM_RIGHT, -130, -10);
     lv_obj_add_event_cb(float_btn_del_all, delete_all_items, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del_all, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del_all, LV_SYMBOL_TRASH, 0);
     lv_obj_set_style_text_font(float_btn_del_all, lv_theme_get_font_large(float_btn_del_all), 0);
+
+    /* Add event handler for page switching */
+    lv_obj_add_event_cb(menu, menu_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
+
+
+
+
+
+
 
 
 
