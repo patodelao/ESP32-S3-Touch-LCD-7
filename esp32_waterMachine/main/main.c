@@ -1046,7 +1046,8 @@ static void lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 
 #define MAX_ITEMS 10 // Define el número máximo de ítems que quieres permitir
 
-static uint32_t btn_cnt = 1;
+
+static uint32_t product_count = 1; // Declarar product_count aquí
 static lv_obj_t * main_page;
 static lv_obj_t * sub_page;
 static lv_obj_t * menu;
@@ -1083,14 +1084,20 @@ static void save_button_event_cb(lv_event_t * e)
 static void delete_last_item(lv_event_t * e)
 {
     if (cont_index == 0) {
-        printf("No hay items para eliminar\n");
+        printf("No hay productos para eliminar\n");
         return;
     }
 
     lv_obj_del(cont_arr[cont_index - 1]); // Eliminar el último contenedor añadido
     cont_arr[cont_index - 1] = NULL; // Limpiar la referencia en el arreglo
     cont_index--;
-    btn_cnt--;
+
+    // Retroceder el contador de nombres de productos si hay productos creados
+    if (product_count > 1) {
+        product_count--;
+    }
+
+    
 }
 
 static void delete_all_items(lv_event_t * e)
@@ -1100,7 +1107,8 @@ static void delete_all_items(lv_event_t * e)
         cont_arr[cont_index - 1] = NULL;
         cont_index--;
     }
-    btn_cnt = 1;
+    
+    product_count=1;
 }
 
 static void text_area_focused(lv_event_t * e)
@@ -1186,7 +1194,7 @@ static void create_new_product(lv_event_t * e)
     lv_obj_t * cont = lv_menu_cont_create(main_page);
     lv_obj_t * cont_label = lv_label_create(cont);
 
-    static uint32_t product_count = 1;
+    //static uint32_t product_count = 1;
     static char default_name[20];
     snprintf(default_name, sizeof(default_name), "Producto %" PRIu32, product_count++);
 
