@@ -1068,8 +1068,12 @@ void save_products_to_nvs() {
         nvs_set_u32(nvs_handle, "product_count", product_count);
         nvs_commit(nvs_handle);
         nvs_close(nvs_handle);
+        printf("Productos guardados en NVS\n");
+    } else {
+        printf("Error al guardar productos en NVS\n");
     }
 }
+
 
 void load_products_from_nvs() {
     nvs_handle_t nvs_handle;
@@ -1078,6 +1082,9 @@ void load_products_from_nvs() {
         nvs_get_blob(nvs_handle, "products", products, &required_size);
         nvs_get_u32(nvs_handle, "product_count", &product_count);
         nvs_close(nvs_handle);
+        printf("Productos cargados desde NVS\n");
+    } else {
+        printf("No hay datos en NVS o error al cargar\n");
     }
 }
 
@@ -1114,34 +1121,31 @@ static void save_button_event_cb(lv_event_t * e){
 
 
 
-static void delete_last_item(lv_event_t * e)
-{
+static void delete_last_item(lv_event_t * e){
     if (cont_index == 0) {
         printf("No hay productos para eliminar\n");
         return;
     }
 
-    lv_obj_del(cont_arr[cont_index - 1]); // Eliminar el último contenedor añadido
-    cont_arr[cont_index - 1] = NULL; // Limpiar la referencia en el arreglo
+    lv_obj_del(cont_arr[cont_index - 1]);
+    cont_arr[cont_index - 1] = NULL;
     cont_index--;
 
-    // Retroceder el contador de nombres de productos si hay productos creados
-    if (product_count > 1) {
+    if (product_count > 0) {
         product_count--;
+        save_products_to_nvs();  // Guardar cambios
     }
-
-    
 }
 
-static void delete_all_items(lv_event_t * e)
-{
+static void delete_all_items(lv_event_t * e){
     while (cont_index > 0) {
         lv_obj_del(cont_arr[cont_index - 1]);
         cont_arr[cont_index - 1] = NULL;
         cont_index--;
     }
-    
-    product_count=1;
+
+    product_count = 0;
+    save_products_to_nvs();  // Guardar cambios
 }
 
 static void text_area_focused(lv_event_t * e)
@@ -1330,57 +1334,53 @@ static void create_new_product(lv_event_t * e)
 
 
 static void go_to_main_screen(lv_event_t * e)
-{
+{   //save_products_to_nvs();  // Guardar antes de salir
     lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
     create_main_screen();  // Volver al menú principal
 }
-
-
 void product_config(void){
     /* Limpiar la pantalla antes de crear la nueva UI */
     lv_obj_clean(lv_scr_act());
 
     /* Crear un contenedor para el título (header) */
     lv_obj_t * header = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(header, lv_disp_get_hor_res(NULL), 50); // Altura del header
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0); // Fijar arriba
-    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE); // No permitir scroll en el header
+    lv_obj_set_size(header, lv_disp_get_hor_res(NULL), 50);
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Agregar el título dentro del header */
     lv_obj_t * title_label = lv_label_create(header);
     lv_label_set_text(title_label, "Configuración de productos:");
-    lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0); // Centrar el texto
+    lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
 
     /* Crear un contenedor inferior (footer) para los botones */
     lv_obj_t * footer = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(footer, lv_disp_get_hor_res(NULL), 60); // Altura del footer
-    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 0); // Fijar abajo
-    lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE); // No permitir scroll en el footer
+    lv_obj_set_size(footer, lv_disp_get_hor_res(NULL), 60);
+    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Crear un contenedor scrolleable para el menú */
     lv_obj_t * menu_container = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(menu_container, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL) - 110); // Espacio entre header y footer
-    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 50); // Ubicarlo debajo del header
-    lv_obj_set_scroll_dir(menu_container, LV_DIR_VER); // Permitir solo scroll vertical
-    lv_obj_set_scrollbar_mode(menu_container, LV_SCROLLBAR_MODE_ON); // Mostrar scrollbar si es necesario
+    lv_obj_set_size(menu_container, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL) - 110);
+    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(menu_container, LV_SCROLLBAR_MODE_ON);
 
     /* Crear el menú dentro del contenedor scrolleable */
     menu = lv_menu_create(menu_container);
-    lv_obj_set_size(menu, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL) - 110); // Ajustar tamaño
+    lv_obj_set_size(menu, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL) - 110);
     lv_obj_align(menu, LV_ALIGN_TOP_MID, 0, 0);
 
     /* Crear la página principal del menú */
     main_page = lv_menu_page_create(menu, NULL);
-    lv_menu_set_page(menu, main_page); // Establecer la página principal
+    lv_menu_set_page(menu, main_page);
 
-
-
-
-    //  Aquí se repueblan los productos guardados en memoria 
+    // 🔹 **Aquí se repueblan los productos guardados en memoria, solo con los nombres** 🔹
     for (uint32_t i = 0; i < product_count; i++) {
         lv_obj_t * cont = lv_menu_cont_create(main_page);
         lv_obj_t * label = lv_label_create(cont);
-        lv_label_set_text(label, products[i].name);
+        lv_label_set_text(label, products[i].name);  // Solo mostrar el nombre del producto
+        lv_menu_set_load_page_event(menu, cont, NULL);  // No necesita cargar otra página
         cont_arr[i] = cont;
     }
 
@@ -1415,17 +1415,13 @@ void product_config(void){
     lv_obj_t * back_btn = lv_btn_create(footer);
     lv_obj_set_size(back_btn, 80, 40);
     lv_obj_align(back_btn, LV_ALIGN_LEFT_MID, 0, 0);
-
     lv_obj_t * label = lv_label_create(back_btn);
     lv_label_set_text(label, "Menú");
-
     lv_obj_add_event_cb(back_btn, go_to_main_screen, LV_EVENT_CLICKED, NULL);
 }
 
 
-
-
-
+/*
 static void create_main_screen(void)
 {
     lv_obj_t * main_screen = lv_obj_create(NULL);
@@ -1449,50 +1445,56 @@ static void create_main_screen(void)
     lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
 }
 
-
-/*
-static void create_main_screen(void){
-
+*/
+static void create_main_screen(void)
+{
     lv_obj_t * main_screen = lv_obj_create(NULL);
-    lv_scr_load(main_screen); // Cargar esta pantalla al inicio
+    lv_scr_load(main_screen);
 
-    // Crear un título en la pantalla principal
     lv_obj_t * title_label = lv_label_create(main_screen);
     lv_label_set_text(title_label, "Menú Principal");
-    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 20); // Posiciona el título en la parte superior
+    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 20);
 
-    // Crear un contenedor para los paneles scrolleables
+    /* 🔹 Contenedor Scrollable para los productos 🔹 */
     lv_obj_t * container = lv_obj_create(main_screen);
-    lv_obj_set_size(container, 800, 300); // Ajusta el tamaño del contenedor según tus necesidades
-    lv_obj_align(container, LV_ALIGN_CENTER, 0, 0); // Centra el contenedor en la pantalla
-
-    // Hacer que el contenedor sea desplazable
+    lv_obj_set_size(container, 800, 300);
+    lv_obj_align(container, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_scroll_dir(container, LV_DIR_HOR);
     lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_set_scroll_dir(container, LV_DIR_HOR); // Desplazamiento horizontal
 
-    // Agregar paneles al contenedor
-    for (int i = 0; i < product_count; i++) {
+    /* 🔹 Crear los paneles de productos 🔹 */
+    for (uint32_t i = 0; i < product_count; i++) {
         lv_obj_t * panel = lv_obj_create(container);
-        lv_obj_set_size(panel, 240, 200); // Ajusta el tamaño de los paneles según tus necesidades
-        lv_obj_align(panel, LV_ALIGN_LEFT_MID, i * 250, 0); // Posiciona los paneles horizontalmente
+        lv_obj_set_size(panel, 240, 200);
+        lv_obj_align(panel, LV_ALIGN_LEFT_MID, i * 250, 0);
+
+        /* Asignar memoria dinámica para el texto */
+        size_t buffer_size = snprintf(NULL, 0, "Nombre: %s\nPrecio: %.2f\nDescripción: %s",
+                                      products[i].name, products[i].price, products[i].description) + 1;
+        char *info = (char *)malloc(buffer_size);
+        if (info == NULL) {
+            printf("Error: No se pudo asignar memoria\n");
+            continue;
+        }
+        snprintf(info, buffer_size, "Nombre: %s\nPrecio: %.2f\nDescripción: %s",
+                 products[i].name, products[i].price, products[i].description);
+
+        /* Crear etiqueta dentro del panel */
+        lv_obj_t * label = lv_label_create(panel);
+        lv_label_set_text(label, info);
+        lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+
+        free(info); // Liberar memoria después de asignarla
     }
 
-    // Crear un botón para acceder a la configuración
+    /* 🔹 Botón para ir a Configuración 🔹 */
     lv_obj_t * config_btn = lv_btn_create(main_screen);
     lv_obj_set_size(config_btn, 200, 50);
-    lv_obj_align(config_btn, LV_ALIGN_BOTTOM_MID, 0, -20); // Posiciona el botón en la parte inferior
-
-    // Agregar un texto al botón
+    lv_obj_align(config_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     lv_obj_t * label = lv_label_create(config_btn);
     lv_label_set_text(label, "Ir a Configuración");
-
-    // Asignar evento al botón
     lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
 }
-
-*/
-
-
 
 
 

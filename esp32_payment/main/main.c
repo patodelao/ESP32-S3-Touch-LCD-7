@@ -594,7 +594,11 @@ static void transaction_task(void *param) {
             }
         } else {
             printf("Tiempo de espera agotado en intento %d.\n", attempt);
-            update_led_indicator(3, attempt);  // LED rojo
+
+            update_led_indicator(1, attempt);  // LED gris
+            if (attempt == MAX_RETRIES) {
+                update_led_indicator(3, attempt);
+            }
 
         }
     }
@@ -944,6 +948,9 @@ void init_task(void *param) {
 
                 if (attempt == MAX_RETRIES) {
                     update_led_indicator(3, attempt);
+                    vTaskDelay(pdMS_TO_TICKS(1000)); // se detiene 1 segundo y se reinicia el proceso (vuelve a estado neutro)
+                    update_led_indicator(1, 0);
+
                 }
         }
     }
