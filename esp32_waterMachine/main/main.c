@@ -917,13 +917,13 @@ void init_task(void *param) {
 
 
 
+////////////////////////////////////
+
+static void create_main_screen(void);
 
 
 
-
-
-
-
+////////////////////////////////////
 
 
 
@@ -1209,62 +1209,120 @@ static void create_new_product(lv_event_t * e)
 }
 
 
+static void go_to_main_screen(lv_event_t * e)
+{
+    lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
+    create_main_screen();  // Volver al menú principal
+}
 
-void product_config(void){
-    
-    /* Crear el menú */
-    menu = lv_menu_create(lv_scr_act());
-    lv_obj_set_size(menu, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
-    lv_obj_center(menu);
 
-    /* Crear la página principal */
-    main_page = lv_menu_page_create(menu, NULL);
+void product_config(void)
+{
+    /* Limpiar la pantalla antes de crear la nueva UI */
+    lv_obj_clean(lv_scr_act());
 
-    /* Agregar un título fijo en la parte superior */
-    lv_obj_t * title_label = lv_label_create(main_page);
+    /* Crear un contenedor para el título (header) */
+    lv_obj_t * header = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(header, lv_disp_get_hor_res(NULL), 50); // Altura del header
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0); // Fijar arriba
+    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE); // No permitir scroll en el header
+
+    /* Agregar el título dentro del header */
+    lv_obj_t * title_label = lv_label_create(header);
     lv_label_set_text(title_label, "Configuración de productos:");
-    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 10); // Posiciona el título en la parte superior
+    lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0); // Centrar el texto
 
-    /* Establecer la página principal */
-    lv_menu_set_page(menu, main_page);
+    /* Crear un contenedor inferior (footer) para los botones */
+    lv_obj_t * footer = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(footer, lv_disp_get_hor_res(NULL), 60); // Altura del footer
+    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 0); // Fijar abajo
+    lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE); // No permitir scroll en el footer
 
-    /* Botón flotante para agregar productos */
-    float_btn_add = lv_btn_create(lv_scr_act());
+    /* Crear un contenedor scrolleable para el menú */
+    lv_obj_t * menu_container = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(menu_container, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL) - 110); // Espacio entre header y footer
+    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 50); // Ubicarlo debajo del header
+    lv_obj_set_scroll_dir(menu_container, LV_DIR_VER); // Permitir solo scroll vertical
+    lv_obj_set_scrollbar_mode(menu_container, LV_SCROLLBAR_MODE_ON); // Mostrar scrollbar si es necesario
+
+    /* Crear el menú dentro del contenedor scrolleable */
+    menu = lv_menu_create(menu_container);
+    lv_obj_set_size(menu, lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL) - 110); // Ajustar tamaño
+    lv_obj_align(menu, LV_ALIGN_TOP_MID, 0, 0);
+
+    /* Crear la página principal del menú */
+    main_page = lv_menu_page_create(menu, NULL);
+    lv_menu_set_page(menu, main_page); // Establecer la página principal
+
+    /* Botón para agregar productos */
+    float_btn_add = lv_btn_create(footer);
     lv_obj_set_size(float_btn_add, 50, 50);
-    lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(float_btn_add, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+    lv_obj_align(float_btn_add, LV_ALIGN_RIGHT_MID, 10, 0);
     lv_obj_add_event_cb(float_btn_add, create_new_product, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_add, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_add, LV_SYMBOL_PLUS, 0);
     lv_obj_set_style_text_font(float_btn_add, lv_theme_get_font_large(float_btn_add), 0);
 
-    /* Botón flotante para eliminar el último producto */
-    float_btn_del = lv_btn_create(lv_scr_act());
+    /* Botón para eliminar el último producto */
+    float_btn_del = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del, 50, 50);
-    lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(float_btn_del, LV_ALIGN_BOTTOM_RIGHT, -70, -10);
+    lv_obj_align(float_btn_del, LV_ALIGN_RIGHT_MID, -50, 0);
     lv_obj_add_event_cb(float_btn_del, delete_last_item, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del, LV_SYMBOL_MINUS, 0);
     lv_obj_set_style_text_font(float_btn_del, lv_theme_get_font_large(float_btn_del), 0);
 
-    /* Botón flotante para eliminar todos los productos */
-    float_btn_del_all = lv_btn_create(lv_scr_act());
+    /* Botón para eliminar todos los productos */
+    float_btn_del_all = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del_all, 50, 50);
-    lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_FLOATING);
-    lv_obj_align(float_btn_del_all, LV_ALIGN_BOTTOM_RIGHT, -130, -10);
+    lv_obj_align(float_btn_del_all, LV_ALIGN_RIGHT_MID, -110, 0);
     lv_obj_add_event_cb(float_btn_del_all, delete_all_items, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del_all, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del_all, LV_SYMBOL_TRASH, 0);
     lv_obj_set_style_text_font(float_btn_del_all, lv_theme_get_font_large(float_btn_del_all), 0);
 
-    /* Agregar evento para cambio de páginas */
-    lv_obj_add_event_cb(menu, menu_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    /* Botón para volver al menú principal */
+    lv_obj_t * back_btn = lv_btn_create(footer);
+    lv_obj_set_size(back_btn, 80, 40);
+    lv_obj_align(back_btn, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t * label = lv_label_create(back_btn);
+    lv_label_set_text(label, "Menú");
+
+    lv_obj_add_event_cb(back_btn, go_to_main_screen, LV_EVENT_CLICKED, NULL);
+}
+
+
+static void go_to_config(lv_event_t * e)
+{
+    lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
+    product_config();  // Cargar la pantalla de configuración
 }
 
 
 
+static void create_main_screen(void)
+{
+    lv_obj_t * main_screen = lv_obj_create(NULL);
+    lv_scr_load(main_screen); // Cargar esta pantalla al inicio
 
+    // Crear un título en la pantalla principal
+    lv_obj_t * title_label = lv_label_create(main_screen);
+    lv_label_set_text(title_label, "Menú Principal");
+    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 20); // Posiciona el título en la parte superior
+
+    // Crear un botón para acceder a la configuración
+    lv_obj_t * config_btn = lv_btn_create(main_screen);
+    lv_obj_set_size(config_btn, 200, 50);
+    lv_obj_align(config_btn, LV_ALIGN_CENTER, 0, 0); // Centrar en la pantalla
+
+    // Agregar un texto al botón
+    lv_obj_t * label = lv_label_create(config_btn);
+    lv_label_set_text(label, "Ir a Configuración");
+
+    // Asignar evento al botón
+    lv_obj_add_event_cb(config_btn, go_to_config, LV_EVENT_CLICKED, NULL);
+}
 
 
 
@@ -1330,7 +1388,8 @@ void app_main(void)
 
     if (lvgl_lock(-1)) {
         lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
-        product_config();  // Crea la interfaz de menú        
+        //product_config();  // Crea la interfaz de menú        
+        create_main_screen();  // Crea la pantalla principal
         lvgl_unlock();
     }
 
