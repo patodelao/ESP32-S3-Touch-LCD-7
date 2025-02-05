@@ -1041,44 +1041,75 @@ static void lvgl_touch_cb(lv_indev_drv_t * drv, lv_indev_data_t * data)
 
 
 
+typedef struct {
+    char name[32];  // Nombre del producto
+    float price;    // Precio del producto
+    char description[128];  // Descripción del producto
+} Product;
+
+#define MAX_PRODUCTS 10 // numero maximo de productos
+static Product products[MAX_PRODUCTS];
+static uint32_t product_count = 0;
 
 
-
-#define MAX_ITEMS 10 // Define el número máximo de ítems que quieres permitir
-
-
-static uint32_t product_count = 1; // Declarar product_count aquí
 static lv_obj_t * main_page;
 static lv_obj_t * sub_page;
 static lv_obj_t * menu;
-static lv_obj_t * cont_arr[MAX_ITEMS]; // Arreglo para almacenar las referencias de los contenedores
+static lv_obj_t * cont_arr[MAX_PRODUCTS]; // Arreglo para almacenar las referencias de los contenedores
 static uint32_t cont_index = 0;
 static lv_obj_t *float_btn_add;
 static lv_obj_t *float_btn_del;
 static lv_obj_t *float_btn_del_all;
 
+void save_products_to_nvs() {
+    nvs_handle_t nvs_handle;
+    if (nvs_open("storage", NVS_READWRITE, &nvs_handle) == ESP_OK) {
+        nvs_set_blob(nvs_handle, "products", products, sizeof(products));
+        nvs_set_u32(nvs_handle, "product_count", product_count);
+        nvs_commit(nvs_handle);
+        nvs_close(nvs_handle);
+    }
+}
 
-static void save_button_event_cb(lv_event_t * e)
-{
+void load_products_from_nvs() {
+    nvs_handle_t nvs_handle;
+    if (nvs_open("storage", NVS_READONLY, &nvs_handle) == ESP_OK) {
+        size_t required_size = sizeof(products);
+        nvs_get_blob(nvs_handle, "products", products, &required_size);
+        nvs_get_u32(nvs_handle, "product_count", &product_count);
+        nvs_close(nvs_handle);
+    }
+}
+
+
+
+static void save_button_event_cb(lv_event_t * e){
     lv_obj_t * sub_page = lv_event_get_user_data(e);
     lv_obj_t * name_ta = lv_obj_get_child(sub_page, 0);
+    lv_obj_t * price_ta = lv_obj_get_child(sub_page, 1);
+    lv_obj_t * desc_ta = lv_obj_get_child(sub_page, 2);
+
     const char * name = lv_textarea_get_text(name_ta);
+    const char * price_str = lv_textarea_get_text(price_ta);
+    const char * description = lv_textarea_get_text(desc_ta);
 
-    if (strlen(name) == 0) {
-        printf("El nombre no puede estar vacío\n");
+    if (strlen(name) == 0 || strlen(price_str) == 0 || strlen(description) == 0) {
+        printf("Todos los campos son obligatorios\n");
         return;
     }
 
-    // **Obtener el contenedor vinculado a esta subpágina**
-    lv_obj_t * cont = lv_obj_get_user_data(sub_page);
-    if (cont == NULL) {
-        printf("Error: No se encontró el contenedor vinculado.\n");
-        return;
-    }
+    if (product_count < MAX_PRODUCTS) {
+        strncpy(products[product_count].name, name, sizeof(products[product_count].name) - 1);
+        products[product_count].name[sizeof(products[product_count].name) - 1] = '\0';
 
-    // Actualizar el texto del contenedor correcto
-    lv_obj_t * label = lv_obj_get_child(cont, 0);
-    lv_label_set_text(label, name);
+        products[product_count].price = strtof(price_str, NULL); // Convertir string a float
+
+        strncpy(products[product_count].description, description, sizeof(products[product_count].description) - 1);
+        products[product_count].description[sizeof(products[product_count].description) - 1] = '\0';
+
+        product_count++;
+        save_products_to_nvs();  // Guardar los cambios en la memoria flash
+    }
 }
 
 
@@ -1259,7 +1290,7 @@ void menu_event_cb(lv_event_t * e)
 
 static void create_new_product(lv_event_t * e)
 {
-    if (cont_index >= MAX_ITEMS) {
+    if (cont_index >= MAX_PRODUCTS) {
         printf("No se pueden añadir más productos\n");
         return;
     }
@@ -1298,7 +1329,6 @@ static void create_new_product(lv_event_t * e)
 }
 
 
-
 static void go_to_main_screen(lv_event_t * e)
 {
     lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
@@ -1306,8 +1336,7 @@ static void go_to_main_screen(lv_event_t * e)
 }
 
 
-void product_config(void)
-{
+void product_config(void){
     /* Limpiar la pantalla antes de crear la nueva UI */
     lv_obj_clean(lv_scr_act());
 
@@ -1343,6 +1372,17 @@ void product_config(void)
     /* Crear la página principal del menú */
     main_page = lv_menu_page_create(menu, NULL);
     lv_menu_set_page(menu, main_page); // Establecer la página principal
+
+
+
+
+    //  Aquí se repueblan los productos guardados en memoria 
+    for (uint32_t i = 0; i < product_count; i++) {
+        lv_obj_t * cont = lv_menu_cont_create(main_page);
+        lv_obj_t * label = lv_label_create(cont);
+        lv_label_set_text(label, products[i].name);
+        cont_arr[i] = cont;
+    }
 
     /* Botón para agregar productos */
     float_btn_add = lv_btn_create(footer);
@@ -1384,7 +1424,7 @@ void product_config(void)
 
 
 
-/*
+
 
 static void create_main_screen(void)
 {
@@ -1409,8 +1449,8 @@ static void create_main_screen(void)
     lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
 }
 
-*/
 
+/*
 static void create_main_screen(void){
 
     lv_obj_t * main_screen = lv_obj_create(NULL);
@@ -1431,7 +1471,7 @@ static void create_main_screen(void){
     lv_obj_set_scroll_dir(container, LV_DIR_HOR); // Desplazamiento horizontal
 
     // Agregar paneles al contenedor
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < product_count; i++) {
         lv_obj_t * panel = lv_obj_create(container);
         lv_obj_set_size(panel, 240, 200); // Ajusta el tamaño de los paneles según tus necesidades
         lv_obj_align(panel, LV_ALIGN_LEFT_MID, i * 250, 0); // Posiciona los paneles horizontalmente
@@ -1450,7 +1490,7 @@ static void create_main_screen(void){
     lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
 }
 
-
+*/
 
 
 
@@ -1464,6 +1504,8 @@ void app_main(void)
 {
     // Initialize NVS
     init_nvs();
+
+    load_products_from_nvs(); // Cargar productos antes de mostrar la UI
 
     // Inicializar UART
     init_uart();
