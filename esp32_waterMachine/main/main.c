@@ -920,7 +920,7 @@ void init_task(void *param) {
 ////////////////////////////////////
 
 static void create_main_screen(void);
-
+void product_config(void);
 
 
 ////////////////////////////////////
@@ -1123,6 +1123,87 @@ static void text_area_defocused(lv_event_t * e)
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void close_password_dialog(lv_event_t * e)
+{
+    lv_obj_t * modal = lv_event_get_target(e);
+    modal = lv_obj_get_parent(modal); // Obtener el contenedor padre (el cuadro de diálogo)
+    lv_obj_del(modal);
+}
+
+
+static void check_password(lv_event_t * e)
+{
+    lv_obj_t * ta = lv_event_get_user_data(e);
+    const char * entered_text = lv_textarea_get_text(ta);
+
+    if (strcmp(entered_text, "tval") == 0) {
+        printf("Acceso permitido\n");
+        lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
+        product_config();  // Ir a la configuración
+    } else {
+        printf("Contraseña incorrecta\n");
+        lv_textarea_set_text(ta, "");  // Limpiar campo de texto
+    }
+}
+
+
+static void open_password_dialog(lv_event_t * e)
+{
+    /* Crear el modal flotante */
+    lv_obj_t * modal = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(modal, 250, 200);
+    lv_obj_align(modal, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(modal, 10, 0);
+
+    /* Título del cuadro de diálogo */
+    lv_obj_t * title = lv_label_create(modal);
+    lv_label_set_text(title, "Ingrese contraseña:");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    /* Crear el teclado */
+    lv_obj_t * kb = lv_keyboard_create(lv_scr_act());
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN); // Ocultar por defecto
+
+    /* Campo de texto para ingresar la contraseña */
+    lv_obj_t * password_ta = lv_textarea_create(modal);
+    lv_textarea_set_password_mode(password_ta, true);  // Ocultar caracteres
+    lv_textarea_set_one_line(password_ta, true);
+    lv_textarea_set_placeholder_text(password_ta, "Contraseña");
+    lv_obj_set_size(password_ta, 200, 40);
+    lv_obj_align(password_ta, LV_ALIGN_CENTER, 0, 0);
+    
+    /* Asignar el teclado al campo de texto */
+    lv_keyboard_set_textarea(kb, password_ta);
+    
+    /* Usar las funciones ya creadas para mostrar y ocultar el teclado */
+    lv_obj_add_event_cb(password_ta, text_area_focused, LV_EVENT_FOCUSED, kb);
+    lv_obj_add_event_cb(password_ta, text_area_defocused, LV_EVENT_DEFOCUSED, kb);
+
+    /* Botón de confirmación */
+    lv_obj_t * confirm_btn = lv_btn_create(modal);
+    lv_obj_set_size(confirm_btn, 80, 40);
+    lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -10, 0);
+    lv_obj_t * label = lv_label_create(confirm_btn);
+    lv_label_set_text(label, "OK");
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_add_event_cb(confirm_btn, check_password, LV_EVENT_CLICKED, password_ta);
+
+    /* Botón de cancelar */
+    lv_obj_t * cancel_btn = lv_btn_create(modal);
+    lv_obj_set_size(cancel_btn, 90, 40);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 10, 0);
+    lv_obj_t * cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "Cancelar");
+    lv_obj_align(cancel_label, LV_ALIGN_RIGHT_MID, 5, 0); // Alinear el texto a la izquierda dentro del botón
+    
+
+    lv_obj_add_event_cb(cancel_btn, close_password_dialog, LV_EVENT_CLICKED, NULL);
+}
+
+
+
+
 static lv_obj_t * create_textarea(lv_obj_t * parent, const char * placeholder)
 {
     lv_obj_t * ta = lv_textarea_create(parent);
@@ -1154,6 +1235,8 @@ static void exit_without_saving_event_cb(lv_event_t * e)
 {
     lv_menu_set_page(menu, main_page);
 }
+
+
 /* Event callback for menu page change */
 void menu_event_cb(lv_event_t * e)
 {
@@ -1293,11 +1376,6 @@ void product_config(void)
 }
 
 
-static void go_to_config(lv_event_t * e)
-{
-    lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
-    product_config();  // Cargar la pantalla de configuración
-}
 
 
 
@@ -1321,7 +1399,7 @@ static void create_main_screen(void)
     lv_label_set_text(label, "Ir a Configuración");
 
     // Asignar evento al botón
-    lv_obj_add_event_cb(config_btn, go_to_config, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
 }
 
 
