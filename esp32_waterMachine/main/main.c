@@ -1384,7 +1384,7 @@ void product_config(void)
 
 
 
-
+/*
 
 static void create_main_screen(void)
 {
@@ -1409,7 +1409,46 @@ static void create_main_screen(void)
     lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
 }
 
+*/
 
+static void create_main_screen(void){
+
+    lv_obj_t * main_screen = lv_obj_create(NULL);
+    lv_scr_load(main_screen); // Cargar esta pantalla al inicio
+
+    // Crear un título en la pantalla principal
+    lv_obj_t * title_label = lv_label_create(main_screen);
+    lv_label_set_text(title_label, "Menú Principal");
+    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 20); // Posiciona el título en la parte superior
+
+    // Crear un contenedor para los paneles scrolleables
+    lv_obj_t * container = lv_obj_create(main_screen);
+    lv_obj_set_size(container, 800, 300); // Ajusta el tamaño del contenedor según tus necesidades
+    lv_obj_align(container, LV_ALIGN_CENTER, 0, 0); // Centra el contenedor en la pantalla
+
+    // Hacer que el contenedor sea desplazable
+    lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_scroll_dir(container, LV_DIR_HOR); // Desplazamiento horizontal
+
+    // Agregar paneles al contenedor
+    for (int i = 0; i < 10; i++) {
+        lv_obj_t * panel = lv_obj_create(container);
+        lv_obj_set_size(panel, 240, 200); // Ajusta el tamaño de los paneles según tus necesidades
+        lv_obj_align(panel, LV_ALIGN_LEFT_MID, i * 250, 0); // Posiciona los paneles horizontalmente
+    }
+
+    // Crear un botón para acceder a la configuración
+    lv_obj_t * config_btn = lv_btn_create(main_screen);
+    lv_obj_set_size(config_btn, 200, 50);
+    lv_obj_align(config_btn, LV_ALIGN_BOTTOM_MID, 0, -20); // Posiciona el botón en la parte inferior
+
+    // Agregar un texto al botón
+    lv_obj_t * label = lv_label_create(config_btn);
+    lv_label_set_text(label, "Ir a Configuración");
+
+    // Asignar evento al botón
+    lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
+}
 
 
 
