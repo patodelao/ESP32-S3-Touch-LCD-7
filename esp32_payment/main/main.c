@@ -50,7 +50,7 @@ static const char *TAG = "demo";
 #define MAX_COMMANDS 100
 
 #define MAX_RETRIES 3  // Número máximo de intentos de reenvío
-#define ACK_TIMEOUT_MS 5000 // Tiempo de espera para recibir ACK en milisegundos
+#define ACK_TIMEOUT_MS 1000 // Tiempo de espera para recibir ACK en milisegundos
 
 
 static lv_obj_t *received_label;
@@ -860,7 +860,7 @@ static void uart_RX_task(void *param) {
 
 
 
-
+/*
 
 // **Task para inicializar la comunicación con el POS**
 void init_task(void *param) {
@@ -911,8 +911,74 @@ void init_task(void *param) {
     vTaskDelete(NULL);
 }
 
+*/
 
 
+
+bool ack_received = false;
+
+void init_task(void *param) {
+    uint8_t init_command[] = {0x02, '0', '0', '7', '0', 0x03};
+    init_command[5] = calculate_lrc(init_command + 1, 4);
+    uint8_t pulling_command[] = {0x02, '0', '1', '0', '0', 0x03};
+    pulling_command[5] = calculate_lrc(pulling_command + 1, 4);
+
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        printf("Intento %d de %d: Enviando comando de inicialización (0070)...\n", attempt, MAX_RETRIES);
+        uart_write_bytes(UART_NUM, (const char *)init_command, sizeof(init_command));
+    
+        uint8_t received_byte;
+        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+            if (received_byte == 0x06) {
+                printf("ACK recibido! Inicialización exitosa.\n");
+                update_led_indicator(2, attempt);
+                ack_received = true;
+                break;
+            } else {
+                printf("NAK recibido en inicialización. Error de COM con POS.\n");
+                update_led_indicator(3, attempt);
+            }
+        } else {
+            printf("Timeout esperando ACK en inicialización. Error de COM con POS.\n");
+                update_led_indicator(1, attempt);
+
+                if (attempt == MAX_RETRIES) {
+                    update_led_indicator(3, attempt);
+                }
+        }
+    }
+
+    if (ack_received) {
+        xQueueReset(ack_queue); // Limpiar la cola de ACKs
+        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            printf("Intento %d de %d: Enviando comando de pulling (0100)...\n", attempt, MAX_RETRIES);
+            uart_write_bytes(UART_NUM, (const char *)pulling_command, sizeof(pulling_command));
+
+            uint8_t received_byte;
+            if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+                if (received_byte == 0x06) {
+                    printf("ACK recibido! Pulling exitoso.\n");
+                    update_led_indicator(2, attempt);
+                    break;
+                } else {
+                    printf("NAK recibido en pulling. Error de COM con POS.\n");
+                    update_led_indicator(3, attempt);
+                }
+            } else {
+                printf("Timeout esperando ACK en pulling. Error de COM con POS.\n");
+                update_led_indicator(1, attempt);
+
+                if (attempt == MAX_RETRIES) {
+                    update_led_indicator(3, attempt);
+                }
+
+                
+            }
+        }
+    }
+    
+    vTaskDelete(NULL);
+}
 
 
 
