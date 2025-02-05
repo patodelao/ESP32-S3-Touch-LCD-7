@@ -1069,14 +1069,16 @@ static void save_button_event_cb(lv_event_t * e)
         return;
     }
 
-    // Buscar el contenedor asociado a la subpágina actual y actualizar su nombre
-    for (uint32_t i = 0; i < cont_index; i++) {
-        if (lv_menu_get_cur_main_page(menu) == sub_page) {
-            lv_obj_t * label = lv_obj_get_child(cont_arr[i], 0);
-            lv_label_set_text(label, name);
-            return;
-        }
+    // **Obtener el contenedor vinculado a esta subpágina**
+    lv_obj_t * cont = lv_obj_get_user_data(sub_page);
+    if (cont == NULL) {
+        printf("Error: No se encontró el contenedor vinculado.\n");
+        return;
     }
+
+    // Actualizar el texto del contenedor correcto
+    lv_obj_t * label = lv_obj_get_child(cont, 0);
+    lv_label_set_text(label, name);
 }
 
 
@@ -1147,7 +1149,7 @@ static void check_password(lv_event_t * e)
 }
 
 
-static void open_password_dialog(lv_event_t * e)
+static void open_password_dialog(lv_event_t * e)    
 {
     /* Crear el modal flotante */
     lv_obj_t * modal = lv_obj_create(lv_scr_act());
@@ -1170,6 +1172,7 @@ static void open_password_dialog(lv_event_t * e)
     lv_textarea_set_one_line(password_ta, true);
     lv_textarea_set_placeholder_text(password_ta, "Contraseña");
     lv_obj_set_size(password_ta, 200, 40);
+    lv_obj_clear_flag(password_ta, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(password_ta, LV_ALIGN_CENTER, 0, 0);
     
     /* Asignar el teclado al campo de texto */
@@ -1277,12 +1280,15 @@ static void create_new_product(lv_event_t * e)
     lv_obj_t * cont = lv_menu_cont_create(main_page);
     lv_obj_t * cont_label = lv_label_create(cont);
 
-    //static uint32_t product_count = 1;
     static char default_name[20];
     snprintf(default_name, sizeof(default_name), "Producto %" PRIu32, product_count++);
 
     lv_label_set_text(cont_label, default_name);
     lv_menu_set_load_page_event(menu, cont, new_sub_page);
+
+    // **Asociar el contenedor con la subpágina**
+    lv_obj_set_user_data(cont, new_sub_page);
+    lv_obj_set_user_data(new_sub_page, cont); // Guardar la referencia bidireccional
 
     lv_obj_scroll_to_view_recursive(cont, LV_ANIM_ON);
 
@@ -1290,6 +1296,7 @@ static void create_new_product(lv_event_t * e)
     cont_arr[cont_index] = cont;
     cont_index++;
 }
+
 
 
 static void go_to_main_screen(lv_event_t * e)
