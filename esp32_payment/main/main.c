@@ -43,7 +43,7 @@
 
 static const char *TAG = "demo";
 
-#define UART_NUM 1  
+#define UART_NUM 2  
 #define UART_TX_PIN 43
 #define UART_RX_PIN 44
 #define UART_BUFFER_SIZE 1024
