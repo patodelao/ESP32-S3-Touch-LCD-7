@@ -113,7 +113,7 @@
  void lvgl_unlock(void);
  void init_task(void *param);
  
- 
+ void create_transaction_command(const char *); // Función para crear un comando de transacción de ejemplo
  
  
  
@@ -616,7 +616,7 @@ static lv_obj_t *received_command_label;
      uint8_t STX = 0x02;
      uint8_t ETX = 0x03;
  
-     char *N_ticket = generateAlphanumericString(20);
+     char *N_ticket = "ABC123"; //generateAlphanumericString(20);
      const char *codigo_cmd = "0200";
      const char *campo_impresion_campo = "1";
      const char *msj_status = "1";
@@ -642,7 +642,7 @@ static lv_obj_t *received_command_label;
      formatted_command[index++] = lrc;
  
      // **Crear la tarea para enviar el comando de manera asíncrona**
-     xTaskCreate(transaction_task, "transaction_task", 4096, formatted_command, 2, NULL);
+     //xTaskCreate(transaction_task, "transaction_task", 4096, formatted_command, 2, NULL);
  
      free(N_ticket);  // Liberar memoria del ticket
  }
@@ -664,7 +664,11 @@ static lv_obj_t *received_command_label;
      }
  }
  
+
+
+
  // Evento para procesar la entrada del teclado
+ /*
  static void keypad_event_handler(lv_event_t *e) {
      lv_obj_t *btnm = lv_event_get_target(e);
      const char *txt = lv_btnmatrix_get_btn_text(btnm, lv_btnmatrix_get_selected_btn(btnm));
@@ -677,42 +681,76 @@ static lv_obj_t *received_command_label;
          lv_textarea_add_text(textarea, txt);
      }
  }
+ */
+
+static void keypad_event_handler(lv_event_t *e) {
+    lv_obj_t *btnm = lv_event_get_target(e);
+    const char *txt = lv_btnmatrix_get_btn_text(btnm, lv_btnmatrix_get_selected_btn(btnm));
+
+    if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
+        lv_textarea_del_char(textarea);
+    } else if (strcmp(txt, LV_SYMBOL_NEW_LINE) == 0) {
+        
+        const char *amount = lv_textarea_get_text(textarea);
  
+        if (strlen(amount) > 0) {
+
+            create_transaction_command(amount); // se envía comando por UART
+
+            
+
+            if(lvgl_lock(-1)) {
+            lv_textarea_set_text(textarea, "");
+            lvgl_unlock();
+            }
+            printf("Monto confirmado: %s\n", amount);
+            
+        } else {
+            printf("El campo de monto está vacío.\n");
+        }
+
+
+
+
+
+
+        
+    } else {
+        lv_textarea_add_text(textarea, txt);
+    }
+}
+
+
+
+
+
  // Crear la interfaz de la botonera numérica
- void create_keypad(void) {
-     // Crear un textarea para mostrar el monto ingresado
-     textarea = lv_textarea_create(lv_scr_act());
-     lv_textarea_set_one_line(textarea, true);
-     lv_obj_align(textarea, LV_ALIGN_TOP_MID, 0, 10);
-     lv_textarea_set_placeholder_text(textarea, "Ingrese monto");
- 
-     // Mapa de la botonera
-     static const char *btnm_map[] = {
-         "1", "2", "3", "\n",
-         "4", "5", "6", "\n",
-         "7", "8", "9", "\n",
-         LV_SYMBOL_BACKSPACE, "0", LV_SYMBOL_NEW_LINE, ""
-     };
- 
-     // Crear la botonera centrada
-     lv_obj_t *btnm = lv_btnmatrix_create(lv_scr_act());
-     lv_obj_set_size(btnm, 250, 300);  // Tamaño estándar
-     lv_obj_align(btnm, LV_ALIGN_CENTER, 0, 20);  // Centrado en la pantalla
- 
-     lv_btnmatrix_set_map(btnm, btnm_map);
-     lv_obj_add_event_cb(btnm, keypad_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
- 
-     // **Crear el LED en la esquina superior derecha**
-     led_indicator = lv_obj_create(lv_scr_act());
-     lv_obj_set_size(led_indicator, 50, 50);  // Tamaño cuadrado
-     lv_obj_align(led_indicator, LV_ALIGN_TOP_RIGHT, -10, 10);  // Alinear en la esquina superior derecha
-     lv_obj_set_style_bg_color(led_indicator, lv_color_make(200, 200, 200), LV_PART_MAIN);  // Color gris neutro
- 
-     // Crear la etiqueta para el número de intentos dentro del LED
-     led_label = lv_label_create(led_indicator);
-     lv_label_set_text(led_label, "0");
-     lv_obj_center(led_label);  // Alinear el texto en el centro del LED
- }
+ void create_keypad(int textarea_width, int textarea_height, int textarea_x_offset, int textarea_y_offset, 
+    int btnm_width, int btnm_height, int btnm_x_offset, int btnm_y_offset) {
+    // Crear un textarea para mostrar el monto ingresado
+    textarea = lv_textarea_create(lv_scr_act());
+    lv_obj_set_size(textarea, textarea_width, textarea_height);
+    lv_textarea_set_one_line(textarea, true);
+    lv_obj_align(textarea, LV_ALIGN_TOP_MID, textarea_x_offset, textarea_y_offset);
+    lv_textarea_set_placeholder_text(textarea, "Ingrese monto");
+
+    // Mapa de la botonera
+    static const char *btnm_map[] = {
+    "1", "2", "3", "\n",
+    "4", "5", "6", "\n",
+    "7", "8", "9", "\n",
+    LV_SYMBOL_BACKSPACE, "0", LV_SYMBOL_NEW_LINE, ""
+    };
+
+    // Crear la botonera centrada
+    lv_obj_t *btnm = lv_btnmatrix_create(lv_scr_act());
+    lv_obj_set_size(btnm, btnm_width, btnm_height);
+    lv_obj_align(btnm, LV_ALIGN_TOP_MID, btnm_x_offset, btnm_y_offset);
+
+    lv_btnmatrix_set_map(btnm, btnm_map);
+    lv_obj_add_event_cb(btnm, keypad_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+}
+
  
 
  
@@ -956,7 +994,14 @@ static void send_nak_command(lv_event_t *e) {
     uart_write_bytes(UART_NUM, (const char *)nak_command, sizeof(nak_command));
 }
 
-
+static void send_init_response(lv_event_t *e) {
+    uint8_t init_response[] = {0x02, 0x30, 0x30, 0x37, 0x30, 0x03, 0x04};
+    //init_command[5] = calculate_lrc(init_command + 1, 4);
+    update_command_labels(init_response, sizeof(init_response), NULL, 0);
+    
+    printf("Enviando comando INIT RESP...\n");
+    uart_write_bytes(UART_NUM, (const char *)init_response, sizeof(init_response));
+}
 /*
 
 void create_command_buttons(void) {
@@ -1001,13 +1046,71 @@ static void send_polling_command2(lv_event_t *e) {
     uart_write_bytes(UART_NUM, (const char *)polling_command, sizeof(polling_command));
 }
 
+static void send_loadkeys_comand(lv_event_t *e) {
+    uint8_t loadkeys_command[] = {0x02, '0', '8', '0', '0', 0x03};
+    loadkeys_command[5] = calculate_lrc(loadkeys_command + 1, 4);
+    update_command_labels(loadkeys_command, sizeof(loadkeys_command), NULL, 0);
+
+    printf("Enviando comando LOAD KEYS...\n");
+    uart_write_bytes(UART_NUM, (const char *)loadkeys_command, sizeof(loadkeys_command));
+}
+
+void create_transaction_command(const char *monto) {
+    uint8_t STX = 0x02;
+    uint8_t ETX = 0x03;
+
+    char ticket_number[] = "ABC123";  // Número de ticket fijo
+    const char *codigo_cmd = "0200";  
+    const char *campo_impresion = "1";
+    const char *enviar_msj = "1";
+
+    // Construcción del comando con snprintf
+    char command[256];
+    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", 
+             codigo_cmd, monto, ticket_number, campo_impresion, enviar_msj);
+
+    size_t command_length = strlen(command) + 3;  // STX + ETX + LRC
+    uint8_t *formatted_command = malloc(command_length);
+
+    if (!formatted_command) {
+        printf("Error: No se pudo asignar memoria para el comando.\n");
+        return;
+    }
+
+    size_t index = 0;
+    formatted_command[index++] = STX;
+    size_t command_len = strlen(command);  // Obtiene la longitud real sin el '\0'
+    memcpy(&formatted_command[index], command, command_len);
+    index += command_len;
+    
+    formatted_command[index++] = ETX;
+
+    // **Cálculo del LRC**
+    uint8_t lrc = calculate_lrc(formatted_command + 1, index - 1);
+    formatted_command[index++] = lrc;
+
+    // **Imprimir en HEX para revisar errores**
+    printf("Mensaje construido dinámicamente: ");
+    for (size_t i = 0; i < index; i++) {
+        printf("%02X ", formatted_command[i]);
+    }
+    printf("\nLRC Calculado: %02X\n", lrc);
+
+    update_command_labels(formatted_command, index, NULL, 0);
+    // Enviar el comando por UART
+    uart_write_bytes(UART_NUM, (const char *)formatted_command, index);
+
+    free(formatted_command);
+}
+
+
 // Crear botones en la interfaz para enviar los comandos
 void create_command_buttons(void) {
 // Crear contenedor principal para los labels
 lv_obj_t *container_labels = lv_obj_create(lv_scr_act());
 lv_obj_set_width(container_labels, LV_PCT(100)); // Ajusta el ancho del contenedor para usar todo el espacio horizontal
 lv_obj_set_height(container_labels, LV_PCT(30)); // Ajusta la altura del contenedor para usar todo el espacio vertical
-lv_obj_align(container_labels, LV_ALIGN_CENTER, 0, 0); // Alinea el contenedor al centro de la pantalla
+lv_obj_align(container_labels, LV_ALIGN_BOTTOM_MID, 0, 0); // Alinea el contenedor al centro de la pantalla
 // Hacer el contenedor principal invisible
 lv_obj_set_style_bg_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del fondo del contenedor a transparente
 lv_obj_set_style_border_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del borde del contenedor a transparente
@@ -1060,49 +1163,64 @@ lv_obj_align(received_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el labe
     lv_label_set_text(label_polling, "POLLING");
     lv_obj_center(label_polling);
 
+    // boton initialitiation response
+    lv_obj_t *btn_init_response = lv_btn_create(lv_scr_act());
+    lv_obj_set_size(btn_init_response, 120, 40);
+    lv_obj_align(btn_init_response, LV_ALIGN_TOP_LEFT, 20, 70);// 230, 20);
+    lv_obj_add_event_cb(btn_init_response, send_init_response, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_init_response = lv_label_create(btn_init_response);
+    lv_label_set_text(label_init_response, "INIT RESPONSE");
+    lv_obj_center(label_init_response);
+    
+
+    // Botón load keys
+    lv_obj_t *btn_loadkeys = lv_btn_create(lv_scr_act());
+    lv_obj_set_size(btn_loadkeys, 80, 40);
+    lv_obj_align(btn_loadkeys, LV_ALIGN_TOP_LEFT, 180, 70);
+    lv_obj_add_event_cb(btn_loadkeys, send_loadkeys_comand, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_loadkeys = lv_label_create(btn_loadkeys);
+    lv_label_set_text(label_loadkeys, "LoadKeys");
+    lv_obj_center(label_loadkeys);
+
+
+
     // Botón 3333
     lv_obj_t *btn_3333 = lv_btn_create(lv_scr_act());
     lv_obj_set_size(btn_3333, 50, 40);
-    lv_obj_align(btn_3333, LV_ALIGN_TOP_LEFT, 20, 80);
+    lv_obj_align(btn_3333, LV_ALIGN_TOP_LEFT, 230, 20);
     lv_obj_add_event_cb(btn_3333, send_mount_3333, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_3333 = lv_label_create(btn_3333);
     lv_label_set_text(label_3333, "$3333");
     lv_obj_center(label_3333);
 
+
+    // PARAMETERS : falta parametrizar el LV_ALIGN_
+    //  (int textarea_width, int textarea_height, int textarea_x_offset, int textarea_y_offset,  int btnm_width, int btnm_height, int btnm_x_offset, int btnm_y_offset)
+    create_keypad(150, 50, 0, 10, 150, 180, 0, 50); // Crear la botonera numérica
+
+
+
+
+
+
+
+
     // Botones ACK y NAK
     lv_obj_t *btn_ack = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_ack, 80, 40);
-    lv_obj_align(btn_ack, LV_ALIGN_BOTTOM_LEFT, 20, -20);
+    lv_obj_set_size(btn_ack, 60, 30);
+    lv_obj_align(btn_ack, LV_ALIGN_TOP_LEFT, 20, 120);
     lv_obj_add_event_cb(btn_ack, send_ack_command, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_ack = lv_label_create(btn_ack);
     lv_label_set_text(label_ack, "ACK");
     lv_obj_center(label_ack);
 
     lv_obj_t *btn_nak = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_nak, 80, 40);
-    lv_obj_align(btn_nak, LV_ALIGN_BOTTOM_RIGHT, -20, -20);
+    lv_obj_set_size(btn_nak, 60, 30);
+    lv_obj_align(btn_nak, LV_ALIGN_TOP_LEFT, 90, 120);
     lv_obj_add_event_cb(btn_nak, send_nak_command, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_nak = lv_label_create(btn_nak);
     lv_label_set_text(label_nak, "NAK");
     lv_obj_center(label_nak);
-
-    // Botón INIT2
-    lv_obj_t *btn_init2 = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_init2, 80, 40);
-    lv_obj_align(btn_init2, LV_ALIGN_TOP_RIGHT, -20, 20);
-    lv_obj_add_event_cb(btn_init2, send_init_command2, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *label_init2 = lv_label_create(btn_init2);
-    lv_label_set_text(label_init2, "INIT2");
-    lv_obj_center(label_init2);
-
-    // Botón POLLING2
-    lv_obj_t *btn_polling2 = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_polling2, 80, 40);
-    lv_obj_align(btn_polling2, LV_ALIGN_TOP_RIGHT, -160, 20);
-    lv_obj_add_event_cb(btn_polling2, send_polling_command2, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *label_polling2 = lv_label_create(btn_polling2);
-    lv_label_set_text(label_polling2, "POLLING2");
-    lv_obj_center(label_polling2);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1403,9 +1521,7 @@ lv_obj_align(received_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el labe
      ESP_LOGI(TAG, "Sistema inicializado. Interfaz lista.");
  
      if (lvgl_lock(-1)) {
-         lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
-         //create_keypad();  // Crea el widget de la botonera
-        // create_command_buttons();
+         lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual (necesario)
             create_command_buttons();
          lvgl_unlock();
      }
