@@ -911,7 +911,7 @@ void update_command_labels(const uint8_t *sent_command, size_t sent_length, cons
 
 
 
-static void send_init_command2(lv_event_t *e) {
+static void send_init_command(lv_event_t *e) {
     uint8_t init_command[] = {0x02, 0x30, 0x30, 0x37, 0x30, 0x03, 0x04};
     //init_command[5] = calculate_lrc(init_command + 1, 4);
     update_command_labels(init_command, sizeof(init_command), NULL, 0);
@@ -920,7 +920,7 @@ static void send_init_command2(lv_event_t *e) {
     uart_write_bytes(UART_NUM, (const char *)init_command, sizeof(init_command));
 }
 
-static void send_polling_command2(lv_event_t *e) {
+static void send_polling_command(lv_event_t *e) {
     uint8_t polling_command[] = {0x02, 0x30, 0x31, 0x30, 0x30, 0x03, 0x04};
     //polling_command[5] = calculate_lrc(polling_command + 1, 4);
     update_command_labels(polling_command, sizeof(polling_command), NULL, 0);
@@ -929,12 +929,37 @@ static void send_polling_command2(lv_event_t *e) {
     uart_write_bytes(UART_NUM, (const char *)polling_command, sizeof(polling_command));
 }
 
+static void send_mount_3333(lv_event_t *e) {
+    uint8_t mount_3333[] = {0x02, 0x30, 0x32, 0x30, 0x30, 0x7C, 0x30, 0x30, 0x30, 0x30, 0x30, 0x33, 0x33, 0x33, 0x33, 0x7C, 0x41, 0x42, 0x43, 0x31, 0x32, 0x33, 0x7C, 0x31, 0x7C, 0x31, 0x03, 0x41};
+    //init_command[5] = calculate_lrc(init_command + 1, 4);
+    update_command_labels(mount_3333, sizeof(mount_3333), NULL, 0);
+    
+    printf("Enviando comando INIT...\n");
+    uart_write_bytes(UART_NUM, (const char *)mount_3333, sizeof(mount_3333));
+}
 
+static void send_ack_command(lv_event_t *e) {
+    uint8_t ack_command[] = {0x06};
+    //init_command[5] = calculate_lrc(init_command + 1, 4);
+    update_command_labels(ack_command, sizeof(ack_command), NULL, 0);
+    
+    printf("Enviando comando ACK...\n");
+    uart_write_bytes(UART_NUM, (const char *)ack_command, sizeof(ack_command));
+}
+
+static void send_nak_command(lv_event_t *e) {
+    uint8_t nak_command[] = {0x15};
+    //init_command[5] = calculate_lrc(init_command + 1, 4);
+    update_command_labels(nak_command, sizeof(nak_command), NULL, 0);
+    
+    printf("Enviando comando NAK...\n");
+    uart_write_bytes(UART_NUM, (const char *)nak_command, sizeof(nak_command));
+}
 
 
 /*
 
-void create_command_buttons2(void) {
+void create_command_buttons(void) {
     lv_obj_t *btn_init = lv_btn_create(lv_scr_act());
     lv_obj_set_size(btn_init, 100, 50);
     lv_obj_align(btn_init, LV_ALIGN_BOTTOM_LEFT, 20, -20);
@@ -956,7 +981,7 @@ void create_command_buttons2(void) {
 
 */
 // Función para enviar el comando INIT por UART
-static void send_init_command(lv_event_t *e) {
+static void send_init_command2(lv_event_t *e) {
     uint8_t init_command[] = {0x02, '0', '0', '7', '0', 0x03};
     //
     init_command[5] = calculate_lrc(init_command + 1, 4);
@@ -967,7 +992,7 @@ static void send_init_command(lv_event_t *e) {
 }
 
 // Función para enviar el comando POLLING por UART
-static void send_polling_command(lv_event_t *e) {
+static void send_polling_command2(lv_event_t *e) {
     uint8_t polling_command[] = {0x02, '0', '1', '0', '0', 0x03};
     polling_command[5] = calculate_lrc(polling_command + 1, 4);
     update_command_labels(polling_command, sizeof(polling_command), NULL, 0);
@@ -978,51 +1003,48 @@ static void send_polling_command(lv_event_t *e) {
 
 // Crear botones en la interfaz para enviar los comandos
 void create_command_buttons(void) {
-    lv_obj_t *btn_init = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_init, 100, 50);
-    lv_obj_align(btn_init, LV_ALIGN_BOTTOM_LEFT, 20, -20);
-    lv_obj_add_event_cb(btn_init, send_init_command, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *label_init = lv_label_create(btn_init);
-    lv_label_set_text(label_init, "INIT");
-    lv_obj_center(label_init);
-
-    lv_obj_t *btn_polling = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_polling, 100, 50);
-    lv_obj_align(btn_polling, LV_ALIGN_BOTTOM_RIGHT, -20, -20);
-    lv_obj_add_event_cb(btn_polling, send_polling_command, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *label_polling = lv_label_create(btn_polling);
-    lv_label_set_text(label_polling, "POLLING");
-    lv_obj_center(label_polling);
-
-    // **Crear botones para los comandos INIT y POLLING**
-    lv_obj_t *btn_init2 = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_init2, 100, 50);
-    lv_obj_align(btn_init2, LV_ALIGN_BOTTOM_LEFT, 20, -100);
-    lv_obj_add_event_cb(btn_init2, send_init_command2, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *label_init2 = lv_label_create(btn_init2);
-    lv_label_set_text(label_init2, "INIT2");
-    lv_obj_center(label_init2);
-    
-    lv_obj_t *btn_polling2 = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_polling2, 100, 50);
-    lv_obj_align(btn_polling2, LV_ALIGN_BOTTOM_RIGHT, -20, -100);
-    lv_obj_add_event_cb(btn_polling2, send_polling_command2, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *label_polling2 = lv_label_create(btn_polling2);
-    lv_label_set_text(label_polling2, "POLLING2");
-    lv_obj_center(label_polling2);
+// Crear contenedor principal para los labels
+lv_obj_t *container_labels = lv_obj_create(lv_scr_act());
+lv_obj_set_width(container_labels, LV_PCT(100)); // Ajusta el ancho del contenedor para usar todo el espacio horizontal
+lv_obj_set_height(container_labels, LV_PCT(30)); // Ajusta la altura del contenedor para usar todo el espacio vertical
+lv_obj_align(container_labels, LV_ALIGN_CENTER, 0, 0); // Alinea el contenedor al centro de la pantalla
+// Hacer el contenedor principal invisible
+lv_obj_set_style_bg_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del fondo del contenedor a transparente
+lv_obj_set_style_border_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del borde del contenedor a transparente
 
 
-}
+
+// Crear sub contenedor para el label de comando enviado
+lv_obj_t *sent_command_container = lv_obj_create(container_labels);
+lv_obj_clear_flag(sent_command_container, LV_OBJ_FLAG_SCROLLABLE); // Desactiva el scroll en el contenedor
+lv_obj_set_width(sent_command_container, LV_PCT(100)); // Ajusta el ancho del sub contenedor
+lv_obj_set_height(sent_command_container, LV_PCT(50)); // Ajusta la altura del sub contenedor
+lv_obj_align(sent_command_container, LV_ALIGN_TOP_LEFT, 0, 0); // Alinea el sub contenedor en la parte superior
+
+// Crear label para mostrar el comando enviado en HEX dentro del sub contenedor
+sent_command_label = lv_label_create(sent_command_container);
+lv_label_set_text(sent_command_label, "Enviado: ");
+lv_obj_align(sent_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el label al centro del sub contenedor
 
 
-void create_command_buttons2(void) {
+
+// Crear sub contenedor para el label de comando recibido
+lv_obj_t *received_command_container = lv_obj_create(container_labels);
+lv_obj_clear_flag(received_command_container, LV_OBJ_FLAG_SCROLLABLE); // Desactiva el scroll en el contenedor
+lv_obj_set_width(received_command_container, LV_PCT(100)); // Ajusta el ancho del sub contenedor
+lv_obj_set_height(received_command_container, LV_PCT(50)); // Ajusta la altura del sub contenedor
+lv_obj_align(received_command_container, LV_ALIGN_BOTTOM_LEFT, 0, 0); // Alinea el sub contenedor en la parte inferior
+
+// Crear label para mostrar el comando recibido en HEX dentro del sub contenedor
+received_command_label = lv_label_create(received_command_container);
+lv_label_set_text(received_command_label, "Recibido: ");
+lv_obj_align(received_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el label al centro del sub contenedor
+
+
+    // Mantener los botones donde están
     // Botón INIT
     lv_obj_t *btn_init = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_init, 100, 50);
+    lv_obj_set_size(btn_init, 80, 40);
     lv_obj_align(btn_init, LV_ALIGN_TOP_LEFT, 20, 20);
     lv_obj_add_event_cb(btn_init, send_init_command, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_init = lv_label_create(btn_init);
@@ -1031,17 +1053,43 @@ void create_command_buttons2(void) {
 
     // Botón POLLING
     lv_obj_t *btn_polling = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_polling, 100, 50);
-    lv_obj_align(btn_polling, LV_ALIGN_TOP_RIGHT, -20, 20);
+    lv_obj_set_size(btn_polling, 80, 40);
+    lv_obj_align(btn_polling, LV_ALIGN_TOP_LEFT, 120, 20);
     lv_obj_add_event_cb(btn_polling, send_polling_command, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_polling = lv_label_create(btn_polling);
     lv_label_set_text(label_polling, "POLLING");
     lv_obj_center(label_polling);
 
+    // Botón 3333
+    lv_obj_t *btn_3333 = lv_btn_create(lv_scr_act());
+    lv_obj_set_size(btn_3333, 50, 40);
+    lv_obj_align(btn_3333, LV_ALIGN_TOP_LEFT, 20, 80);
+    lv_obj_add_event_cb(btn_3333, send_mount_3333, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_3333 = lv_label_create(btn_3333);
+    lv_label_set_text(label_3333, "$3333");
+    lv_obj_center(label_3333);
+
+    // Botones ACK y NAK
+    lv_obj_t *btn_ack = lv_btn_create(lv_scr_act());
+    lv_obj_set_size(btn_ack, 80, 40);
+    lv_obj_align(btn_ack, LV_ALIGN_BOTTOM_LEFT, 20, -20);
+    lv_obj_add_event_cb(btn_ack, send_ack_command, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_ack = lv_label_create(btn_ack);
+    lv_label_set_text(label_ack, "ACK");
+    lv_obj_center(label_ack);
+
+    lv_obj_t *btn_nak = lv_btn_create(lv_scr_act());
+    lv_obj_set_size(btn_nak, 80, 40);
+    lv_obj_align(btn_nak, LV_ALIGN_BOTTOM_RIGHT, -20, -20);
+    lv_obj_add_event_cb(btn_nak, send_nak_command, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_nak = lv_label_create(btn_nak);
+    lv_label_set_text(label_nak, "NAK");
+    lv_obj_center(label_nak);
+
     // Botón INIT2
     lv_obj_t *btn_init2 = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_init2, 100, 50);
-    lv_obj_align(btn_init2, LV_ALIGN_BOTTOM_LEFT, 20, -20);
+    lv_obj_set_size(btn_init2, 80, 40);
+    lv_obj_align(btn_init2, LV_ALIGN_TOP_RIGHT, -20, 20);
     lv_obj_add_event_cb(btn_init2, send_init_command2, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_init2 = lv_label_create(btn_init2);
     lv_label_set_text(label_init2, "INIT2");
@@ -1049,27 +1097,14 @@ void create_command_buttons2(void) {
 
     // Botón POLLING2
     lv_obj_t *btn_polling2 = lv_btn_create(lv_scr_act());
-    lv_obj_set_size(btn_polling2, 100, 50);
-    lv_obj_align(btn_polling2, LV_ALIGN_BOTTOM_RIGHT, -20, -20);
+    lv_obj_set_size(btn_polling2, 80, 40);
+    lv_obj_align(btn_polling2, LV_ALIGN_TOP_RIGHT, -160, 20);
     lv_obj_add_event_cb(btn_polling2, send_polling_command2, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_polling2 = lv_label_create(btn_polling2);
     lv_label_set_text(label_polling2, "POLLING2");
     lv_obj_center(label_polling2);
-
-
-
-
-    // Crear label para mostrar el comando enviado en HEX
-    sent_command_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(sent_command_label, "Enviado: ");
-    lv_obj_align(sent_command_label, LV_ALIGN_CENTER, 20, -80);
-
-    // Crear label para mostrar el comando recibido en HEX
-    received_command_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(received_command_label, "Recibido: ");
-    lv_obj_align(received_command_label, LV_ALIGN_CENTER, 20, -60);
-
 }
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -1079,7 +1114,7 @@ void create_command_buttons2(void) {
 
 
  
- 
+ /*     IMPORTANTE REVISAR SI SIRVE ANTES DE BORRAR
  bool ack_received = false;
  
  void init_task(void *param) {
@@ -1145,7 +1180,7 @@ void create_command_buttons2(void) {
      vTaskDelete(NULL);
  }
  
- 
+ */
  
  
  
@@ -1371,7 +1406,7 @@ void create_command_buttons2(void) {
          lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
          //create_keypad();  // Crea el widget de la botonera
         // create_command_buttons();
-            create_command_buttons2();
+            create_command_buttons();
          lvgl_unlock();
      }
  
