@@ -1054,7 +1054,7 @@ static void send_loadkeys_comand(lv_event_t *e) {
     printf("Enviando comando LOAD KEYS...\n");
     uart_write_bytes(UART_NUM, (const char *)loadkeys_command, sizeof(loadkeys_command));
 }
-
+/*
 void create_transaction_command(const char *monto) {
     uint8_t STX = 0x02;
     uint8_t ETX = 0x03;
@@ -1102,46 +1102,109 @@ void create_transaction_command(const char *monto) {
 
     free(formatted_command);
 }
+*/
+void create_transaction_command(const char *monto) {
+    uint8_t STX = 0x02;
+    uint8_t ETX = 0x03;
+
+    char monto_formateado[10];  // 9 caracteres + '\0'
+    memset(monto_formateado, '0', 9);  // Llena con ceros
+    monto_formateado[9] = '\0';  // Asegura terminación nula
+
+    // Copia el monto al final, alineado a la derecha
+    int len_monto = strlen(monto);
+    if (len_monto > 9) {
+        printf("Error: El monto excede los 9 dígitos\n");
+        return;
+    }
+    memmove(monto_formateado + (9 - len_monto), monto, len_monto);
+
+    char ticket_number[] = "ABC123";  // Número de ticket fijo
+    const char *codigo_cmd = "0200";  
+    const char *campo_impresion = "1";
+    const char *enviar_msj = "1";
+
+    // Construcción del comando con snprintf
+    char command[256];
+    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", 
+             codigo_cmd, monto_formateado, ticket_number, campo_impresion, enviar_msj);
+
+    size_t command_length = strlen(command) + 3;  // STX + ETX + LRC
+    uint8_t *formatted_command = malloc(command_length);
+
+    if (!formatted_command) {
+        printf("Error: No se pudo asignar memoria para el comando.\n");
+        return;
+    }
+
+    size_t index = 0;
+    formatted_command[index++] = STX;
+    size_t command_len = strlen(command);
+    memcpy(&formatted_command[index], command, command_len);
+    index += command_len;
+    
+    formatted_command[index++] = ETX;
+
+    // **Cálculo del LRC**
+    uint8_t lrc = calculate_lrc(formatted_command + 1, index - 1);
+    formatted_command[index++] = lrc;
+
+    // **Imprimir en HEX para revisar errores**
+    printf("Mensaje construido dinámicamente: ");
+    for (size_t i = 0; i < index; i++) {
+        printf("%02X ", formatted_command[i]);
+    }
+    printf("\nLRC Calculado: %02X\n", lrc);
+
+    update_command_labels(formatted_command, index, NULL, 0);
+    uart_write_bytes(UART_NUM, (const char *)formatted_command, index);
+
+    free(formatted_command);
+}
+
+
+
 
 
 // Crear botones en la interfaz para enviar los comandos
 void create_command_buttons(void) {
-// Crear contenedor principal para los labels
-lv_obj_t *container_labels = lv_obj_create(lv_scr_act());
-lv_obj_set_width(container_labels, LV_PCT(100)); // Ajusta el ancho del contenedor para usar todo el espacio horizontal
-lv_obj_set_height(container_labels, LV_PCT(30)); // Ajusta la altura del contenedor para usar todo el espacio vertical
-lv_obj_align(container_labels, LV_ALIGN_BOTTOM_MID, 0, 0); // Alinea el contenedor al centro de la pantalla
-// Hacer el contenedor principal invisible
-lv_obj_set_style_bg_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del fondo del contenedor a transparente
-lv_obj_set_style_border_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del borde del contenedor a transparente
+    
+    // Crear contenedor principal para los labels
+    lv_obj_t *container_labels = lv_obj_create(lv_scr_act());
+    lv_obj_set_width(container_labels, LV_PCT(100)); // Ajusta el ancho del contenedor para usar todo el espacio horizontal
+    lv_obj_set_height(container_labels, LV_PCT(30)); // Ajusta la altura del contenedor para usar todo el espacio vertical
+    lv_obj_align(container_labels, LV_ALIGN_BOTTOM_MID, 0, 0); // Alinea el contenedor al centro de la pantalla
+    // Hacer el contenedor principal invisible
+    lv_obj_set_style_bg_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del fondo del contenedor a transparente
+    lv_obj_set_style_border_opa(container_labels, LV_OPA_TRANSP, 0); // Ajusta la opacidad del borde del contenedor a transparente
 
 
 
-// Crear sub contenedor para el label de comando enviado
-lv_obj_t *sent_command_container = lv_obj_create(container_labels);
-lv_obj_clear_flag(sent_command_container, LV_OBJ_FLAG_SCROLLABLE); // Desactiva el scroll en el contenedor
-lv_obj_set_width(sent_command_container, LV_PCT(100)); // Ajusta el ancho del sub contenedor
-lv_obj_set_height(sent_command_container, LV_PCT(50)); // Ajusta la altura del sub contenedor
-lv_obj_align(sent_command_container, LV_ALIGN_TOP_LEFT, 0, 0); // Alinea el sub contenedor en la parte superior
+    // Crear sub contenedor para el label de comando enviado
+    lv_obj_t *sent_command_container = lv_obj_create(container_labels);
+    lv_obj_clear_flag(sent_command_container, LV_OBJ_FLAG_SCROLLABLE); // Desactiva el scroll en el contenedor
+    lv_obj_set_width(sent_command_container, LV_PCT(100)); // Ajusta el ancho del sub contenedor
+    lv_obj_set_height(sent_command_container, LV_PCT(50)); // Ajusta la altura del sub contenedor
+    lv_obj_align(sent_command_container, LV_ALIGN_TOP_LEFT, 0, 0); // Alinea el sub contenedor en la parte superior
 
-// Crear label para mostrar el comando enviado en HEX dentro del sub contenedor
-sent_command_label = lv_label_create(sent_command_container);
-lv_label_set_text(sent_command_label, "Enviado: ");
-lv_obj_align(sent_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el label al centro del sub contenedor
+    // Crear label para mostrar el comando enviado en HEX dentro del sub contenedor
+    sent_command_label = lv_label_create(sent_command_container);
+    lv_label_set_text(sent_command_label, "Enviado: ");
+    lv_obj_align(sent_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el label al centro del sub contenedor
 
 
 
-// Crear sub contenedor para el label de comando recibido
-lv_obj_t *received_command_container = lv_obj_create(container_labels);
-lv_obj_clear_flag(received_command_container, LV_OBJ_FLAG_SCROLLABLE); // Desactiva el scroll en el contenedor
-lv_obj_set_width(received_command_container, LV_PCT(100)); // Ajusta el ancho del sub contenedor
-lv_obj_set_height(received_command_container, LV_PCT(50)); // Ajusta la altura del sub contenedor
-lv_obj_align(received_command_container, LV_ALIGN_BOTTOM_LEFT, 0, 0); // Alinea el sub contenedor en la parte inferior
+    // Crear sub contenedor para el label de comando recibido
+    lv_obj_t *received_command_container = lv_obj_create(container_labels);
+    lv_obj_clear_flag(received_command_container, LV_OBJ_FLAG_SCROLLABLE); // Desactiva el scroll en el contenedor
+    lv_obj_set_width(received_command_container, LV_PCT(100)); // Ajusta el ancho del sub contenedor
+    lv_obj_set_height(received_command_container, LV_PCT(50)); // Ajusta la altura del sub contenedor
+    lv_obj_align(received_command_container, LV_ALIGN_BOTTOM_LEFT, 0, 0); // Alinea el sub contenedor en la parte inferior
 
-// Crear label para mostrar el comando recibido en HEX dentro del sub contenedor
-received_command_label = lv_label_create(received_command_container);
-lv_label_set_text(received_command_label, "Recibido: ");
-lv_obj_align(received_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el label al centro del sub contenedor
+    // Crear label para mostrar el comando recibido en HEX dentro del sub contenedor
+    received_command_label = lv_label_create(received_command_container);
+    lv_label_set_text(received_command_label, "Recibido: ");
+    lv_obj_align(received_command_label, LV_ALIGN_LEFT_MID, 0, 0); // Alinea el label al centro del sub contenedor
 
 
     // Mantener los botones donde están
