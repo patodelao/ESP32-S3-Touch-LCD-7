@@ -928,7 +928,9 @@
  ////////////////////////////////////
  
  static void create_main_screen(void);
- void product_config(void);
+void product_config(void);
+static void sub_page_event_cb(lv_event_t * e);
+static void back_btn_event_cb(lv_event_t * e);
  static lv_obj_t * create_textarea(lv_obj_t * parent, const char * placeholder);
  
  
@@ -1118,8 +1120,8 @@
      product_count=1;
  }
 
-  ////////////////////////////////////
- // memoria NVM
+ ////////////////////////////////////// memoria NVM
+
 
 
 
@@ -1198,6 +1200,8 @@ void load_products_from_nvs() {
 
         // 🟢 Crear la subpágina para la configuración del producto
         lv_obj_t *product_sub_page = lv_menu_page_create(menu, NULL);
+
+        lv_obj_add_event_cb(product_sub_page, sub_page_event_cb, LV_EVENT_ALL, NULL);
 
         // Agregar elementos de configuración dentro de la subpágina
         lv_obj_t *name_ta = create_textarea(product_sub_page, "Nombre");
@@ -1359,7 +1363,27 @@ void load_products_from_nvs() {
  static void exit_without_saving_event_cb(lv_event_t * e)
  {   save_products_to_nvs();
      lv_menu_set_page(menu, main_page);
+
+    // Obtener el botón de retroceso y agregar el evento
+    lv_obj_t * cur_page = lv_menu_get_cur_main_page(menu);
+    lv_obj_t * back_btn = lv_obj_get_child(cur_page, 0); // Assuming the back button is the first child
+    lv_obj_add_event_cb(back_btn, back_btn_event_cb, LV_EVENT_CLICKED, NULL);
  }
+ 
+
+
+ static void sub_page_event_cb(lv_event_t * e)
+ {
+     lv_event_code_t code = lv_event_get_code(e);
+ 
+     if (code == LV_EVENT_SCREEN_LOADED) {  // Se ha cargado una subpágina, ocultar botones flotantes
+         lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+         lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+         lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+     }
+ }
+ 
+ 
  
 
  /* Event callback for menu page change */
@@ -1367,57 +1391,64 @@ void load_products_from_nvs() {
  {
      lv_obj_t * menu = lv_event_get_target(e);
      lv_obj_t * active_page = lv_menu_get_cur_main_page(menu);
-     
-     if (active_page == sub_page) {
-         lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
-         lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
-         lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
-     } else {
+ 
+     if (active_page == main_page) {
+         // ✅ Si estamos en la página principal, mostrar botones flotantes
          lv_obj_clear_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
          lv_obj_clear_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
          lv_obj_clear_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+     } else {
+         // ✅ Si entramos a una subpágina, ocultar los botones flotantes
+         lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+         lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+         lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
      }
  }
  
- static void create_new_product(lv_event_t * e)
- {
-     if (cont_index >= MAX_ITEMS) {
-         printf("No se pueden añadir más productos\n");
-         return;
-     }
  
-     // Crear una nueva subpágina para el producto
-     lv_obj_t * new_sub_page = lv_menu_page_create(menu, NULL);
- 
-     lv_obj_t * name_ta = create_textarea(new_sub_page, "Nombre");
-     lv_obj_t * price_ta = create_textarea(new_sub_page, "Precio");
-     lv_obj_t * desc_ta = create_textarea(new_sub_page, "Descripción");
- 
-     lv_obj_t * save_btn = lv_btn_create(new_sub_page);
-     lv_obj_t * label = lv_label_create(save_btn);
-     lv_label_set_text(label, "Guardar");
-     lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, new_sub_page);
- 
-     // Crear contenedor en la página principal con nombre predeterminado
-     lv_obj_t * cont = lv_menu_cont_create(main_page);
-     lv_obj_t * cont_label = lv_label_create(cont);
- 
-     static char default_name[20];
-     snprintf(default_name, sizeof(default_name), "Producto %" PRIu32, product_count++);
- 
-     lv_label_set_text(cont_label, default_name);
-     lv_menu_set_load_page_event(menu, cont, new_sub_page);
- 
-     // **Asociar el contenedor con la subpágina**
-     lv_obj_set_user_data(cont, new_sub_page);
-     lv_obj_set_user_data(new_sub_page, cont); // Guardar la referencia bidireccional
- 
-     lv_obj_scroll_to_view_recursive(cont, LV_ANIM_ON);
- 
-     // Guardar la referencia del contenedor en el arreglo
-     cont_arr[cont_index] = cont;
-     cont_index++;
+ static void create_new_product(lv_event_t * e) {
+    if (cont_index >= MAX_ITEMS) {
+        printf("No se pueden añadir más productos\n");
+        return;
+    }
+
+    // Crear una nueva subpágina para el producto
+    lv_obj_t * new_sub_page = lv_menu_page_create(menu, NULL);
+    
+    lv_obj_add_event_cb(new_sub_page, sub_page_event_cb, LV_EVENT_ALL, NULL);
+
+
+
+    lv_obj_t * name_ta = create_textarea(new_sub_page, "Nombre");
+    lv_obj_t * price_ta = create_textarea(new_sub_page, "Precio");
+    lv_obj_t * desc_ta = create_textarea(new_sub_page, "Descripción");
+
+    lv_obj_t * save_btn = lv_btn_create(new_sub_page);
+    lv_obj_t * label = lv_label_create(save_btn);
+    lv_label_set_text(label, "Guardar");
+    lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, new_sub_page);
+
+    // Crear contenedor en la página principal con nombre predeterminado
+    lv_obj_t * cont = lv_menu_cont_create(main_page);
+    lv_obj_t * cont_label = lv_label_create(cont);
+
+    static char default_name[20];
+    snprintf(default_name, sizeof(default_name), "Producto %" PRIu32, product_count++);
+
+    lv_label_set_text(cont_label, default_name);
+    lv_menu_set_load_page_event(menu, cont, new_sub_page);
+
+    // **Asociar el contenedor con la subpágina**
+    lv_obj_set_user_data(cont, new_sub_page);
+    lv_obj_set_user_data(new_sub_page, cont); // Guardar la referencia bidireccional
+
+    lv_obj_scroll_to_view_recursive(cont, LV_ANIM_ON);
+
+    // Guardar la referencia del contenedor en el arreglo
+    cont_arr[cont_index] = cont;
+    cont_index++;
 }
+
  
  
  
@@ -1466,9 +1497,18 @@ static void go_to_main_screen(lv_event_t * e) {
  
      /* Crear la página principal del menú */
      main_page = lv_menu_page_create(menu, NULL);
-     lv_menu_set_page(menu, main_page); // Establecer la página principal
+     lv_menu_set_page(menu, main_page);
+
+    // Obtener el botón de retroceso y agregar el evento
+    
+     lv_obj_t * back_btn_menu = lv_menu_get_cur_main_page(menu);
+     lv_obj_add_event_cb(back_btn_menu, back_btn_event_cb, LV_EVENT_CLICKED, NULL); // Establecer la página principal
  
-     load_products_from_nvs();    // Cargar productos guardados en NVS
+
+    // 🔹 Detectar cambio de página para ocultar/mostrar botones flotantes
+    lv_obj_add_event_cb(menu, menu_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    load_products_from_nvs();    // Cargar productos guardados en NVS
 
     
      /* Botón para agregar productos */
@@ -1512,7 +1552,16 @@ static void go_to_main_screen(lv_event_t * e) {
  
  
  
- 
+ static void back_btn_event_cb(lv_event_t * e) {
+    lv_menu_set_page(menu, main_page);
+
+    // 🔹 Mostrar botones flotantes al volver a la página principal
+    lv_obj_clear_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+}
+
+
  static void create_main_screen(void)
  {
      lv_obj_t * main_screen = lv_obj_create(NULL);
