@@ -929,6 +929,7 @@
  
  static void create_main_screen(void);
  void product_config(void);
+ static lv_obj_t * create_textarea(lv_obj_t * parent, const char * placeholder);
  
  
 
@@ -1162,7 +1163,6 @@ void save_products_to_nvs() {
 
     printf("Productos guardados correctamente en NVS.\n");
 }
-
 void load_products_from_nvs() {
     nvs_handle_t my_handle;
     esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
@@ -1171,7 +1171,6 @@ void load_products_from_nvs() {
         return;
     }
 
-    // Obtener el número de productos guardados
     uint32_t stored_product_count = 0;
     err = nvs_get_u32(my_handle, "product_count", &stored_product_count);
     if (err != ESP_OK) {
@@ -1182,8 +1181,7 @@ void load_products_from_nvs() {
 
     printf("Se encontraron %ld productos guardados en NVS\n", stored_product_count);
 
-    // Restaurar productos en la interfaz
-    cont_index = 0; // Reiniciar índice antes de cargar productos
+    cont_index = 0;
     for (uint32_t i = 0; i < stored_product_count; i++) {
         char key[20];
         snprintf(key, sizeof(key), "product_%ld", i);
@@ -1198,18 +1196,35 @@ void load_products_from_nvs() {
 
         printf("Restaurando producto: %s\n", name);
 
-        // Crear el contenedor en la UI con el nombre recuperado
+        // 🟢 Crear la subpágina para la configuración del producto
+        lv_obj_t *product_sub_page = lv_menu_page_create(menu, NULL);
+
+        // Agregar elementos de configuración dentro de la subpágina
+        lv_obj_t *name_ta = create_textarea(product_sub_page, "Nombre");
+        lv_obj_t *price_ta = create_textarea(product_sub_page, "Precio");
+        lv_obj_t *desc_ta = create_textarea(product_sub_page, "Descripción");
+
+        lv_obj_t *save_btn = lv_btn_create(product_sub_page);
+        lv_obj_t *label = lv_label_create(save_btn);
+        lv_label_set_text(label, "Guardar");
+        lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, product_sub_page);
+
+        // 🟢 Crear el contenedor del producto en la página principal
         lv_obj_t *cont = lv_menu_cont_create(main_page);
         lv_obj_t *cont_label = lv_label_create(cont);
         lv_label_set_text(cont_label, name);
-        lv_menu_set_load_page_event(menu, cont, sub_page);
+        
+        // 🟢 Asociar el contenedor con la subpágina
+        lv_menu_set_load_page_event(menu, cont, product_sub_page);
+        lv_obj_set_user_data(cont, product_sub_page);
+        lv_obj_set_user_data(product_sub_page, cont);
 
-        cont_arr[cont_index++] = cont; // Guardar referencia
+        // Guardar referencia del contenedor
+        cont_arr[cont_index++] = cont;
     }
 
     nvs_close(my_handle);
 }
-
 
 
 
