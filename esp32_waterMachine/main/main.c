@@ -29,6 +29,9 @@
  #include "esp_lcd_touch_gt911.h"
  #include "driver/uart.h"
  #include "time.h"
+
+ #include "nvs.h"
+ #include "nvs_flash.h"
  
  #define I2C_MASTER_SCL_IO           9       /*!< GPIO number used for I2C master clock */
  #define I2C_MASTER_SDA_IO           8       /*!< GPIO number used for I2C master data  */
@@ -173,7 +176,12 @@
  static lv_obj_t *led_label;  // Etiqueta para el número de intentos
  
  
+
+
  
+ 
+
+
  
  
  
@@ -923,11 +931,7 @@
  void product_config(void);
  
  
- ////////////////////////////////////
- 
- 
- 
- 
+
  
  static bool on_vsync_event(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t *event_data, void *user_data)
  {
@@ -1112,6 +1116,109 @@
      
      product_count=1;
  }
+
+  ////////////////////////////////////
+ // memoria NVM
+
+
+
+
+extern lv_obj_t *cont_arr[MAX_ITEMS]; // Declare cont_arr here
+
+void save_products_to_nvs() {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error abriendo NVS\n");
+        return;
+    }
+
+    // Guardar el número de productos
+    err = nvs_set_u32(my_handle, "product_count", cont_index);
+    if (err != ESP_OK) {
+        printf("Error guardando el número de productos\n");
+    }
+
+    // Guardar cada producto individualmente
+    for (uint32_t i = 0; i < cont_index; i++) {
+        if (cont_arr[i] == NULL) continue;
+
+        lv_obj_t *cont = cont_arr[i];
+        lv_obj_t *label = lv_obj_get_child(cont, 0);
+        const char *name = lv_label_get_text(label);
+
+        char key[20];
+        snprintf(key, sizeof(key), "product_%ld", i);
+
+        err = nvs_set_str(my_handle, key, name);
+        if (err != ESP_OK) {
+            printf("Error guardando producto %ld\n", i);
+        }
+    }
+
+    // Guardar cambios en NVS
+    nvs_commit(my_handle);
+    nvs_close(my_handle);
+
+    printf("Productos guardados correctamente en NVS.\n");
+}
+
+void load_products_from_nvs() {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error abriendo NVS para lectura\n");
+        return;
+    }
+
+    // Obtener el número de productos guardados
+    uint32_t stored_product_count = 0;
+    err = nvs_get_u32(my_handle, "product_count", &stored_product_count);
+    if (err != ESP_OK) {
+        printf("No hay productos guardados en NVS\n");
+        nvs_close(my_handle);
+        return;
+    }
+
+    printf("Se encontraron %ld productos guardados en NVS\n", stored_product_count);
+
+    // Restaurar productos en la interfaz
+    cont_index = 0; // Reiniciar índice antes de cargar productos
+    for (uint32_t i = 0; i < stored_product_count; i++) {
+        char key[20];
+        snprintf(key, sizeof(key), "product_%ld", i);
+
+        char name[50];
+        size_t name_size = sizeof(name);
+        err = nvs_get_str(my_handle, key, name, &name_size);
+        if (err != ESP_OK) {
+            printf("Error cargando producto %ld\n", i);
+            continue;
+        }
+
+        printf("Restaurando producto: %s\n", name);
+
+        // Crear el contenedor en la UI con el nombre recuperado
+        lv_obj_t *cont = lv_menu_cont_create(main_page);
+        lv_obj_t *cont_label = lv_label_create(cont);
+        lv_label_set_text(cont_label, name);
+        lv_menu_set_load_page_event(menu, cont, sub_page);
+
+        cont_arr[cont_index++] = cont; // Guardar referencia
+    }
+
+    nvs_close(my_handle);
+}
+
+
+
+
+
+
+
+
+
+
  
  static void text_area_focused(lv_event_t * e)
  {
@@ -1138,7 +1245,7 @@
      lv_obj_t * ta = lv_event_get_user_data(e);
      const char * entered_text = lv_textarea_get_text(ta);
  
-     if (strcmp(entered_text, "tval") == 0) {
+     if (strcmp(entered_text, "") == 0) { //FIJAR CONTRASEÑA
          printf("Acceso permitido\n");
          lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
          product_config();  // Ir a la configuración
@@ -1235,11 +1342,11 @@
  }
  
  static void exit_without_saving_event_cb(lv_event_t * e)
- {
+ {   save_products_to_nvs();
      lv_menu_set_page(menu, main_page);
  }
  
- 
+
  /* Event callback for menu page change */
  void menu_event_cb(lv_event_t * e)
  {
@@ -1295,21 +1402,23 @@
      // Guardar la referencia del contenedor en el arreglo
      cont_arr[cont_index] = cont;
      cont_index++;
- }
+}
  
  
  
- static void go_to_main_screen(lv_event_t * e)
- {
-     lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
-     create_main_screen();  // Volver al menú principal
- }
+static void go_to_main_screen(lv_event_t * e) {
+    save_products_to_nvs();  // Guardar productos antes de salir
+    lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
+    create_main_screen();  // Volver al menú principal
+}
+
  
  
  void product_config(void)
  {
      /* Limpiar la pantalla antes de crear la nueva UI */
      lv_obj_clean(lv_scr_act());
+
  
      /* Crear un contenedor para el título (header) */
      lv_obj_t * header = lv_obj_create(lv_scr_act());
@@ -1344,6 +1453,9 @@
      main_page = lv_menu_page_create(menu, NULL);
      lv_menu_set_page(menu, main_page); // Establecer la página principal
  
+     load_products_from_nvs();    // Cargar productos guardados en NVS
+
+    
      /* Botón para agregar productos */
      float_btn_add = lv_btn_create(footer);
      lv_obj_set_size(float_btn_add, 50, 50);
