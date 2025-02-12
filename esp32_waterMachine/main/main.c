@@ -1607,6 +1607,7 @@ void create_main_screen(void) {
     lv_obj_set_size(main_panel, 800, 480);
     lv_obj_align(main_panel, LV_ALIGN_CENTER, 0, 0);
 
+    
     // **Panel Exhibidor de Productos**
     lv_obj_t *product_panel = lv_obj_create(main_panel);
     lv_obj_set_size(product_panel, 600, 120);
@@ -1632,6 +1633,7 @@ void create_main_screen(void) {
                 if (nvs_get_str(my_handle, key, product_name, &length) == ESP_OK) {
                     lv_obj_t *item = lv_obj_create(product_panel);
                     lv_obj_set_size(item, 120, 100);
+                    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
                     lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), 0);
                     lv_obj_align(item, LV_ALIGN_LEFT_MID, i * 130, 0);
                     
