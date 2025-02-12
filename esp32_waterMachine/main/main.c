@@ -1145,25 +1145,58 @@ void save_products_to_nvs() {
     for (uint32_t i = 0; i < cont_index; i++) {
         if (cont_arr[i] == NULL) continue;
 
+        // Recuperar el nombre desde el contenedor en la página principal
         lv_obj_t *cont = cont_arr[i];
-        lv_obj_t *label = lv_obj_get_child(cont, 0);
-        const char *name = lv_label_get_text(label);
+        lv_obj_t *name_label = lv_obj_get_child(cont, 0);
+        const char *name = lv_label_get_text(name_label);
 
+        // Guardar el nombre en NVS (clave "product_i")
         char key[20];
         snprintf(key, sizeof(key), "product_%ld", i);
-
         err = nvs_set_str(my_handle, key, name);
         if (err != ESP_OK) {
             printf("Error guardando producto %ld\n", i);
         }
+
+        // Recuperar la sub-página asociada al contenedor (guardada en el user_data)
+        lv_obj_t *sub_page = lv_obj_get_user_data(cont);
+        if (sub_page != NULL) {
+            // Se asume que en la sub-página:
+            // - El primer campo (índice 0) es el nombre (ya se guardó desde el contenedor)
+            // - El segundo campo (índice 1) es el precio
+            // - El tercer campo (índice 2) es la descripción
+            lv_obj_t *price_ta = lv_obj_get_child(sub_page, 1);
+            lv_obj_t *desc_ta  = lv_obj_get_child(sub_page, 2);
+
+            const char *price = (price_ta != NULL) ? lv_textarea_get_text(price_ta) : "0.00";
+            const char *desc  = (desc_ta  != NULL) ? lv_textarea_get_text(desc_ta)  : "";
+
+            // Guardar el precio con clave "price_i"
+            char price_key[20];
+            snprintf(price_key, sizeof(price_key), "price_%ld", i);
+            err = nvs_set_str(my_handle, price_key, price);
+            if (err != ESP_OK) {
+                printf("Error guardando precio del producto %ld\n", i);
+            }
+
+            // Guardar la descripción con clave "desc_i"
+            char desc_key[20];
+            snprintf(desc_key, sizeof(desc_key), "desc_%ld", i);
+            err = nvs_set_str(my_handle, desc_key, desc);
+            if (err != ESP_OK) {
+                printf("Error guardando descripción del producto %ld\n", i);
+            }
+        }
     }
 
-    // Guardar cambios en NVS
+    // Commit y cerrar NVS
     nvs_commit(my_handle);
     nvs_close(my_handle);
 
     printf("Productos guardados correctamente en NVS.\n");
 }
+
+
 
 char *load_products_from_nvs() {
     nvs_handle_t my_handle;
@@ -1599,6 +1632,24 @@ void load_products_for_config(void) {
 }
 
 
+static void product_item_event_cb(lv_event_t * e) {
+    // Obtener el objeto que disparó el evento
+    lv_obj_t * item = lv_event_get_target(e);
+    
+    // Obtener el color de fondo actual del objeto en la parte principal
+    lv_color_t current_color = lv_obj_get_style_bg_color(item, LV_PART_MAIN);
+    
+    // Comparamos el color actual con el color azul (definido con lv_palette_main)
+    if(current_color.full == lv_palette_main(LV_PALETTE_BLUE).full) {
+         // Si el color es azul, lo cambiamos a verde (RGB: 0,255,0)
+         lv_obj_set_style_bg_color(item, lv_color_make(0, 255, 0), LV_PART_MAIN);
+    } else {
+         // Si el color no es azul (por ejemplo, ya está verde), lo restauramos a azul
+         lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+    }
+}
+
+
 void create_main_screen(void) {
     lv_obj_clean(lv_scr_act()); // Limpia la pantalla actual
 
@@ -1617,39 +1668,64 @@ void create_main_screen(void) {
     lv_obj_set_scroll_dir(product_panel, LV_DIR_HOR);
     lv_obj_set_scrollbar_mode(product_panel, LV_SCROLLBAR_MODE_AUTO);
 
-    // Obtener productos desde la NVS
-    nvs_handle_t my_handle;
-    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
-    if (err == ESP_OK) {
-        uint32_t product_count = 0;
-        nvs_get_u32(my_handle, "product_count", &product_count);
-        
-        if (product_count > 0) {
-            for (uint32_t i = 0; i < product_count; i++) {
-                char key[20], product_name[32];
-                snprintf(key, sizeof(key), "product_%ld", i);
-                size_t length = sizeof(product_name);
-                
-                if (nvs_get_str(my_handle, key, product_name, &length) == ESP_OK) {
-                    lv_obj_t *item = lv_obj_create(product_panel);
-                    lv_obj_set_size(item, 120, 100);
-                    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
-                    lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), 0);
-                    lv_obj_align(item, LV_ALIGN_LEFT_MID, i * 130, 0);
-                    
-                    lv_obj_t *label = lv_label_create(item);
-                    lv_label_set_text(label, product_name);
-                    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+nvs_handle_t my_handle;
+esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+if (err == ESP_OK) {
+    uint32_t product_count = 0;
+    nvs_get_u32(my_handle, "product_count", &product_count);
+    
+    if (product_count > 0) {
+        for (uint32_t i = 0; i < product_count; i++) {
+            char key[20];
+            char product_name[32];
+            size_t length = sizeof(product_name);
+            snprintf(key, sizeof(key), "product_%ld", i);
+            
+            if (nvs_get_str(my_handle, key, product_name, &length) == ESP_OK) {
+                // Recuperar el precio asociado.
+                char price_key[20];
+                char product_price[16];
+                size_t price_len = sizeof(product_price);
+                snprintf(price_key, sizeof(price_key), "price_%ld", i);
+                esp_err_t err_price = nvs_get_str(my_handle, price_key, product_price, &price_len);
+                if (err_price != ESP_OK) {
+                    // Si no se encuentra el precio, asigna uno por defecto (por ejemplo, "0.00")
+                    strcpy(product_price, "0.00");
                 }
+                
+                // Crear el item (contenedor) para el producto.
+                lv_obj_t *item = lv_obj_create(product_panel);
+                lv_obj_set_size(item, 120, 100);
+                lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), 0);
+                lv_obj_align(item, LV_ALIGN_LEFT_MID, i * 130, 0);
+                
+                // Agregar callback para detectar clic y cambiar de color (toggle).
+                lv_obj_add_event_cb(item, product_item_event_cb, LV_EVENT_CLICKED, NULL);
+                
+                // Crear label para el nombre y alinearlo en la parte superior.
+                lv_obj_t *name_label = lv_label_create(item);
+                lv_label_set_text(name_label, product_name);
+                lv_obj_align(name_label, LV_ALIGN_TOP_MID, 0, 5);
+                
+                // Crear label para el precio y alinearlo en la parte inferior.
+                char formatted_price[32];
+                snprintf(formatted_price, sizeof(formatted_price), "$%s", product_price);
+
+                lv_obj_t *price_label = lv_label_create(item);
+                lv_label_set_text(price_label, formatted_price);
+                lv_obj_align(price_label, LV_ALIGN_BOTTOM_MID, 0, -5);
+
             }
-        } else {
-            lv_obj_t *label = lv_label_create(product_panel);
-            lv_label_set_text(label, "No hay productos");
-            lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
         }
-        
-        nvs_close(my_handle);
+    } else {
+        lv_obj_t *label = lv_label_create(product_panel);
+        lv_label_set_text(label, "No hay productos");
+        lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
     }
+    
+    nvs_close(my_handle);
+    }
+
 
     // **Botón de Configuración de Productos**
     lv_obj_t *btn_config = lv_btn_create(main_panel);
