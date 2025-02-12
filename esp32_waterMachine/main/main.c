@@ -1090,24 +1090,23 @@ static void back_btn_event_cb(lv_event_t * e);
  
  
  
- static void delete_last_item(lv_event_t * e)
- {
-     if (cont_index == 0) {
-         printf("No hay productos para eliminar\n");
-         return;
-     }
+ static void delete_last_item(lv_event_t * e) {
+    if (cont_index == 0) {
+        printf("No hay productos para eliminar\n");
+        return;
+    }
+    
+    lv_obj_del(cont_arr[cont_index - 1]); // Elimina el último contenedor
+    cont_arr[cont_index - 1] = NULL;
+    cont_index--;
+    
+    if (product_count > 1) {
+        product_count--;
+    }
+}
+
  
-     lv_obj_del(cont_arr[cont_index - 1]); // Eliminar el último contenedor añadido
-     cont_arr[cont_index - 1] = NULL; // Limpiar la referencia en el arreglo
-     cont_index--;
- 
-     // Retroceder el contador de nombres de productos si hay productos creados
-     if (product_count > 1) {
-         product_count--;
-     }
- 
-     
- }
+
  
  static void delete_all_items(lv_event_t * e)
  {
@@ -1166,72 +1165,33 @@ void save_products_to_nvs() {
     printf("Productos guardados correctamente en NVS.\n");
 }
 
-void load_products_from_nvs() {
+char *load_products_from_nvs() {
     nvs_handle_t my_handle;
     esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
     if (err != ESP_OK) {
-        printf("Error abriendo NVS para lectura\n");
-        return;
+        ESP_LOGE(TAG, "Error abriendo NVS: %s", esp_err_to_name(err));
+        return NULL;
     }
 
-    uint32_t stored_product_count = 0;
-    err = nvs_get_u32(my_handle, "product_count", &stored_product_count);
-    if (err != ESP_OK) {
-        printf("No hay productos guardados en NVS\n");
-        nvs_close(my_handle);
-        return;
-    }
-
-    printf("Se encontraron %ld productos guardados en NVS\n", stored_product_count);
-
-    cont_index = 0;
-    product_count = stored_product_count + 1;  // 🔹 Ajustar contador de productos
-
-    for (uint32_t i = 0; i < stored_product_count; i++) {
-        char key[20];
-        snprintf(key, sizeof(key), "product_%ld", i);
-
-        char name[50];
-        size_t name_size = sizeof(name);
-        err = nvs_get_str(my_handle, key, name, &name_size);
-        if (err != ESP_OK) {
-            printf("Error cargando producto %ld\n", i);
-            continue;
+    size_t required_size = 0;
+    err = nvs_get_str(my_handle, "products", NULL, &required_size);
+    
+    if (err == ESP_OK && required_size > 0) {
+        char *products = malloc(required_size);
+        if (products == NULL) {
+            ESP_LOGE(TAG, "Error al asignar memoria para productos");
+            nvs_close(my_handle);
+            return NULL;
         }
 
-        printf("Restaurando producto: %s\n", name);
-
-        // 🟢 Crear la subpágina para la configuración del producto
-        lv_obj_t *product_sub_page = lv_menu_page_create(menu, NULL);
-        lv_obj_add_event_cb(product_sub_page, sub_page_event_cb, LV_EVENT_ALL, NULL);
-
-        lv_obj_t *name_ta = create_textarea(product_sub_page, "Nombre");
-        lv_obj_t *price_ta = create_textarea(product_sub_page, "Precio");
-        lv_obj_t *desc_ta = create_textarea(product_sub_page, "Descripción");
-
-        lv_obj_t *save_btn = lv_btn_create(product_sub_page);
-        lv_obj_t *label = lv_label_create(save_btn);
-        lv_label_set_text(label, "Guardar");
-        lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, product_sub_page);
-
-        // 🟢 Crear el contenedor del producto en la página principal
-        lv_obj_t *cont = lv_menu_cont_create(main_page);
-        lv_obj_t *cont_label = lv_label_create(cont);
-        lv_label_set_text(cont_label, name);
-
-        // 🟢 Asociar el contenedor con la subpágina
-        lv_menu_set_load_page_event(menu, cont, product_sub_page);
-        lv_obj_set_user_data(cont, product_sub_page);
-        lv_obj_set_user_data(product_sub_page, cont);
-
-        cont_arr[cont_index++] = cont;
+        nvs_get_str(my_handle, "products", products, &required_size);
+        nvs_close(my_handle);
+        return products; // Devuelve la cadena con los productos
     }
 
     nvs_close(my_handle);
+    return strdup("No hay productos guardados"); // Retorna mensaje por defecto si no hay productos
 }
-
-
-
 
 
 
@@ -1449,13 +1409,91 @@ void load_products_from_nvs() {
  
  
  
-static void go_to_main_screen(lv_event_t * e) {
-    save_products_to_nvs();  // Guardar productos antes de salir
-    lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
-    create_main_screen();  // Volver al menú principal
+static void transition_to_main_screen(void * param) {
+    lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
+    create_main_screen();         // Crea el menú principal
 }
 
- 
+static void go_to_main_screen(lv_event_t * e) {
+    save_products_to_nvs();         // Guarda los productos antes de salir
+    lv_async_call(transition_to_main_screen, NULL);  // Llama asíncronamente a la transición
+}
+
+void load_products_for_config(void) {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+    if (err != ESP_OK) {
+        printf("Error abriendo NVS en configuración\n");
+        return;
+    }
+    
+    uint32_t saved_product_count = 0;
+    err = nvs_get_u32(my_handle, "product_count", &saved_product_count);
+    if (err != ESP_OK) {
+        printf("No se encontró el número de productos guardados\n");
+        nvs_close(my_handle);
+        return;
+    }
+    
+    // Reiniciamos el índice de contenedores
+    cont_index = 0;
+    
+    for (uint32_t i = 0; i < saved_product_count; i++) {
+        char key[20];
+        char product_name[32];
+        size_t len = sizeof(product_name);
+        snprintf(key, sizeof(key), "product_%ld", i);
+        
+        if (nvs_get_str(my_handle, key, product_name, &len) == ESP_OK) {
+            // Crear la sub-página para este producto (igual que en create_new_product)
+            lv_obj_t * new_sub_page = lv_menu_page_create(menu, NULL);
+            lv_obj_add_event_cb(new_sub_page, sub_page_event_cb, LV_EVENT_ALL, NULL);
+
+            // Crear los tres campos de texto en la sub-página
+            lv_obj_t * name_ta = create_textarea(new_sub_page, "Nombre");
+            // Asignar el nombre cargado
+            lv_textarea_set_text(name_ta, product_name);
+
+            lv_obj_t * price_ta = create_textarea(new_sub_page, "Precio");
+            // Puedes cargar un valor guardado para el precio, o dejarlo vacío
+            lv_textarea_set_text(price_ta, "");
+
+            lv_obj_t * desc_ta = create_textarea(new_sub_page, "Descripción");
+            // Igual para la descripción
+            lv_textarea_set_text(desc_ta, "");
+
+            // Crear el botón de guardar en la sub-página
+            lv_obj_t * save_btn = lv_btn_create(new_sub_page);
+            lv_obj_t * save_label = lv_label_create(save_btn);
+            lv_label_set_text(save_label, "Guardar");
+            lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, new_sub_page);
+
+            // Crear el contenedor interactivo en la página principal del menú
+            lv_obj_t * cont = lv_menu_cont_create(main_page);
+            lv_obj_t * cont_label = lv_label_create(cont);
+            // Usar el nombre del producto cargado en el contenedor
+            lv_label_set_text(cont_label, product_name);
+            // Vincular el contenedor con su sub-página
+            lv_menu_set_load_page_event(menu, cont, new_sub_page);
+
+            // Guardar la referencia bidireccional
+            lv_obj_set_user_data(cont, new_sub_page);
+            lv_obj_set_user_data(new_sub_page, cont);
+
+            lv_obj_scroll_to_view_recursive(cont, LV_ANIM_ON);
+
+            // Guardar el contenedor en el arreglo global y actualizar el índice
+            cont_arr[cont_index] = cont;
+            cont_index++;
+        }
+    }
+    
+    nvs_close(my_handle);
+}
+
+
+
+
  
  void product_config(void)
  {
@@ -1496,6 +1534,8 @@ static void go_to_main_screen(lv_event_t * e) {
      main_page = lv_menu_page_create(menu, NULL);
      lv_menu_set_page(menu, main_page);
 
+     load_products_for_config(); 
+
     // Obtener el botón de retroceso y agregar el evento
     
      lv_obj_t * back_btn_menu = lv_menu_get_cur_main_page(menu);
@@ -1505,7 +1545,7 @@ static void go_to_main_screen(lv_event_t * e) {
     // 🔹 Detectar cambio de página para ocultar/mostrar botones flotantes
     lv_obj_add_event_cb(menu, menu_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    load_products_from_nvs();    // Cargar productos guardados en NVS
+    //load_products_from_nvs();    // Cargar productos guardados en NVS
 
     
      /* Botón para agregar productos */
@@ -1559,32 +1599,67 @@ static void go_to_main_screen(lv_event_t * e) {
 }
 
 
- static void create_main_screen(void)
- {
-     lv_obj_t * main_screen = lv_obj_create(NULL);
-     lv_scr_load(main_screen); // Cargar esta pantalla al inicio
- 
-     // Crear un título en la pantalla principal
-     lv_obj_t * title_label = lv_label_create(main_screen);
-     lv_label_set_text(title_label, "Menú Principal");
-     lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 20); // Posiciona el título en la parte superior
- 
-     // Crear un botón para acceder a la configuración
-     lv_obj_t * config_btn = lv_btn_create(main_screen);
-     lv_obj_set_size(config_btn, 200, 50);
-     lv_obj_align(config_btn, LV_ALIGN_CENTER, 0, 0); // Centrar en la pantalla
- 
-     // Agregar un texto al botón
-     lv_obj_t * label = lv_label_create(config_btn);
-     lv_label_set_text(label, "Ir a Configuración");
- 
-     // Asignar evento al botón
-     lv_obj_add_event_cb(config_btn, open_password_dialog, LV_EVENT_CLICKED, NULL);
- }
- 
- 
- 
- 
+void create_main_screen(void) {
+    lv_obj_clean(lv_scr_act()); // Limpia la pantalla actual
+
+    // Crear el contenedor principal
+    lv_obj_t *main_panel = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(main_panel, 800, 480);
+    lv_obj_align(main_panel, LV_ALIGN_CENTER, 0, 0);
+
+    // **Panel Exhibidor de Productos**
+    lv_obj_t *product_panel = lv_obj_create(main_panel);
+    lv_obj_set_size(product_panel, 600, 120);
+    lv_obj_align(product_panel, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_set_style_pad_all(product_panel, 10, 0);
+    lv_obj_set_style_bg_color(product_panel, lv_palette_main(LV_PALETTE_GREY), 0);
+    lv_obj_set_scroll_dir(product_panel, LV_DIR_HOR);
+    lv_obj_set_scrollbar_mode(product_panel, LV_SCROLLBAR_MODE_AUTO);
+
+    // Obtener productos desde la NVS
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+    if (err == ESP_OK) {
+        uint32_t product_count = 0;
+        nvs_get_u32(my_handle, "product_count", &product_count);
+        
+        if (product_count > 0) {
+            for (uint32_t i = 0; i < product_count; i++) {
+                char key[20], product_name[32];
+                snprintf(key, sizeof(key), "product_%ld", i);
+                size_t length = sizeof(product_name);
+                
+                if (nvs_get_str(my_handle, key, product_name, &length) == ESP_OK) {
+                    lv_obj_t *item = lv_obj_create(product_panel);
+                    lv_obj_set_size(item, 120, 100);
+                    lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), 0);
+                    lv_obj_align(item, LV_ALIGN_LEFT_MID, i * 130, 0);
+                    
+                    lv_obj_t *label = lv_label_create(item);
+                    lv_label_set_text(label, product_name);
+                    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+                }
+            }
+        } else {
+            lv_obj_t *label = lv_label_create(product_panel);
+            lv_label_set_text(label, "No hay productos");
+            lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+        }
+        
+        nvs_close(my_handle);
+    }
+
+    // **Botón de Configuración de Productos**
+    lv_obj_t *btn_config = lv_btn_create(main_panel);
+    lv_obj_set_size(btn_config, 200, 50);
+    lv_obj_align(btn_config, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_add_event_cb(btn_config, open_password_dialog, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *label_config = lv_label_create(btn_config);
+    lv_label_set_text(label_config, "Configurar Productos");
+    lv_obj_center(label_config);
+}
+
  
  
  
