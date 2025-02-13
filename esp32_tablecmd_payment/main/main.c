@@ -1119,7 +1119,7 @@ void create_transaction_command(const char *monto) {
     }
     memmove(monto_formateado + (9 - len_monto), monto, len_monto);
 
-    char ticket_number[] = "1ABC123";  // Número de ticket fijo
+    char ticket_number[] = "2189aaA987321";  // Número de ticket fijo
     const char *codigo_cmd = "0200";  
     const char *campo_impresion = "1";
     const char *enviar_msj = "1";
