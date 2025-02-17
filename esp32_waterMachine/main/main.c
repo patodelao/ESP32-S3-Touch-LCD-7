@@ -114,6 +114,7 @@
  bool lvgl_lock(int timeout_ms);
  void lvgl_unlock(void);
  void init_task(void *param);
+ void create_general_config_screen(void);
  
  
  
@@ -1291,7 +1292,8 @@ char *load_products_from_nvs() {
      if (strcmp(entered_text, "") == 0) { //FIJAR CONTRASEÑA
          printf("Acceso permitido\n");
          lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
-         product_config();  // Ir a la configuración
+         //product_config();  // Ir a la configuración
+         create_general_config_screen();
      } else {
          printf("Contraseña incorrecta\n");
          lv_textarea_set_text(ta, "");  // Limpiar campo de texto
@@ -1591,11 +1593,12 @@ void product_config(void){
     lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 25);
     lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(menu_container, LV_SCROLLBAR_MODE_OFF); // Desactivar scrollbar
+    lv_obj_clear_flag(menu_container, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Crear el menú dentro del contenedor scrolleable */
     menu = lv_menu_create(menu_container);
     lv_obj_clear_flag(menu, LV_OBJ_FLAG_SCROLLABLE);    // Desactivar scroll
-    lv_obj_set_size(menu, 800, 300 );
+    lv_obj_set_size(menu, 750, 300 );
     lv_obj_align(menu, LV_ALIGN_TOP_MID, 50, 0);
 
     /* Crear la página principal del menú y asignarla */
@@ -1611,7 +1614,7 @@ void product_config(void){
 
     /* --- FOOTER --- */
     lv_obj_t *footer = lv_obj_create(config_container);
-    lv_obj_set_size(footer, lv_disp_get_hor_res(NULL), 60);  // Altura del footer
+    lv_obj_set_size(footer, 750, 60);  // Altura del footer
     lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 20);
     lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -1663,34 +1666,38 @@ void product_config(void){
     /* Asegurarse de que la pestaña (parent) tenga un tamaño correcto.
        En este ejemplo lo forzamos a 800x480. */
     lv_obj_set_size(parent, 800, 480);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);  // Desactivar scroll
 
     /* Crear un contenedor principal para la configuración con tamaño fijo */
     lv_obj_t *config_container = lv_obj_create(parent);
-    lv_obj_set_size(config_container, 740, 470);
+    lv_obj_set_size(config_container, 750, 455);
     //lv_obj_set_size(config_container,lv_disp_get_hor_res(NULL),lv_disp_get_ver_res(NULL));
-    lv_obj_align(config_container, LV_ALIGN_CENTER, 60, 5);
+    lv_obj_align(config_container, LV_ALIGN_CENTER, -25, 15);
     lv_obj_set_style_bg_color(config_container, lv_color_make(240,240,240), 0);
+    lv_obj_clear_flag(config_container, LV_OBJ_FLAG_SCROLLABLE);    // Desactivar scroll
 
     /* --- HEADER --- */
     lv_obj_t *header = lv_obj_create(config_container);
-    lv_obj_set_size(header, 100, 50);
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(header, 750, 60);
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -25);
+    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);  // Desactivar scroll
     lv_obj_t *title_label = lv_label_create(header);
     lv_label_set_text(title_label, "Configuración de productos:");
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
 
+
     /* --- MENÚ --- */
     lv_obj_t *menu_container = lv_obj_create(config_container);
-    lv_obj_set_size(menu_container, 800, 480 - 50 - 60);  // Resta header (50) y footer (60)
-    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_set_size(menu_container, 700, 350);  // Resta header (50) y footer (60)
+    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, -25, 20);
     lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(menu_container, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(menu_container, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Crear el menú dentro del contenedor */
     menu = lv_menu_create(menu_container);
     lv_obj_clear_flag(menu, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(menu, 800, lv_obj_get_height(menu_container));
+    lv_obj_set_size(menu, 800, 300);
     lv_obj_align(menu, LV_ALIGN_TOP_MID, 0, 0);
 
     /* Crear la página principal del menú y asignarla */
@@ -1709,7 +1716,7 @@ void product_config(void){
     /* Botón para agregar productos */
     float_btn_add = lv_btn_create(footer);
     lv_obj_set_size(float_btn_add, 50, 50);
-    lv_obj_align(float_btn_add, LV_ALIGN_RIGHT_MID, 10, 0);
+    lv_obj_align(float_btn_add, LV_ALIGN_RIGHT_MID, -50, 0);
     lv_obj_add_event_cb(float_btn_add, create_new_product, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_add, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_add, LV_SYMBOL_PLUS, 0);
@@ -1718,7 +1725,7 @@ void product_config(void){
     /* Botón para eliminar el último producto */
     float_btn_del = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del, 50, 50);
-    lv_obj_align(float_btn_del, LV_ALIGN_RIGHT_MID, -50, 0);
+    lv_obj_align(float_btn_del, LV_ALIGN_RIGHT_MID, -120, 0);
     lv_obj_add_event_cb(float_btn_del, delete_last_item, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del, LV_SYMBOL_MINUS, 0);
@@ -1727,7 +1734,7 @@ void product_config(void){
     /* Botón para eliminar todos los productos */
     float_btn_del_all = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del_all, 50, 50);
-    lv_obj_align(float_btn_del_all, LV_ALIGN_RIGHT_MID, -110, 0);
+    lv_obj_align(float_btn_del_all, LV_ALIGN_RIGHT_MID, -170, 0);
     lv_obj_add_event_cb(float_btn_del_all, delete_all_items, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del_all, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del_all, LV_SYMBOL_TRASH, 0);
@@ -1736,7 +1743,7 @@ void product_config(void){
     /* Botón para volver al menú principal */
     lv_obj_t *back_btn = lv_btn_create(footer);
     lv_obj_set_size(back_btn, 80, 40);
-    lv_obj_align(back_btn, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_align(back_btn, LV_ALIGN_CENTER, 0, 0);
     lv_obj_t *btn_label = lv_label_create(back_btn);
     lv_label_set_text(btn_label, "Menú");
     lv_obj_add_event_cb(back_btn, go_to_main_screen, LV_EVENT_CLICKED, NULL);
@@ -1759,8 +1766,14 @@ static void scroll_begin_event(lv_event_t * e)
 void create_general_config_screen(void)
 {
     /* Crear el tabview principal en la pantalla */
-    lv_obj_t *tabview = lv_tabview_create(lv_scr_act(), LV_DIR_LEFT, 60);
-    lv_obj_set_style_bg_color(tabview, lv_palette_lighten(LV_PALETTE_RED, 2), 0);
+    lv_obj_t *tabview = lv_tabview_create(lv_scr_act(), LV_DIR_LEFT, 70);
+    lv_obj_set_style_bg_color(tabview, lv_palette_lighten(LV_PALETTE_BLUE_GREY, 2), 0);
+    // BORRAR lv_obj_set_size(tabview,70,480);
+
+    /* Limitar la altura de la barra de menú */
+    //lv_obj_t *tab_btns = lv_tabview_get_tab_btns(tabview);
+    //lv_obj_set_height(tab_btns, 455);  // Aquí defines la altura deseada
+    //lv_obj_align(tab_btns, LV_ALIGN_TOP_LEFT, 0, 25);
 
     /* Desactivar el scroll del contenido del tabview */
     lv_obj_clear_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_SCROLLABLE);
@@ -1977,8 +1990,8 @@ void create_main_screen(void) {
  
      if (lvgl_lock(-1)) {
          lv_obj_clean(lv_scr_act());  // Limpia la pantalla actual
-         create_main_screen();  // Crea la pantalla principal
-          //   create_general_config_screen();  // Muestra el tabview con las pestañas y la configuración de productos en la 2ª pestaña
+         //create_main_screen();  // Crea la pantalla principal
+         create_general_config_screen();  // Muestra el tabview con las pestañas y la configuración de productos en la 2ª pestaña
          lvgl_unlock();
      }
  
