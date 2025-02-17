@@ -185,6 +185,7 @@
 lv_obj_t * create_header(lv_obj_t * parent) {
     lv_obj_t * header = lv_obj_create(parent);
     lv_obj_set_size(header, lv_disp_get_hor_res(NULL), 30);
+    lv_obj_set_style_radius(header, 0, 0);  // Sin bordes redondeados
     lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
     
@@ -1672,7 +1673,7 @@ void product_config(void){
 
     /* Crear un contenedor principal para la configuración con tamaño fijo */
     lv_obj_t *config_container = lv_obj_create(parent);
-    lv_obj_set_size(config_container, 730, 455);
+    lv_obj_set_size(config_container, 730, 450);
     //lv_obj_set_size(config_container,lv_disp_get_hor_res(NULL),lv_disp_get_ver_res(NULL));
     lv_obj_align(config_container, LV_ALIGN_CENTER, -35, -15); // altura buena incluyendo HEADER DEL SISTEMA
     lv_obj_set_style_bg_color(config_container, lv_color_make(240,240,240), 0);
@@ -1681,7 +1682,7 @@ void product_config(void){
     /* --- HEADER --- */
     lv_obj_t *header = lv_obj_create(config_container);
     lv_obj_set_size(header, 730, 60);
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -30);
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -35);
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);  // Desactivar scroll
     lv_obj_t *title_label = lv_label_create(header);
     lv_label_set_text(title_label, "Configuración de productos:");
@@ -1711,9 +1712,10 @@ void product_config(void){
 
     /* --- FOOTER --- */
     lv_obj_t *footer = lv_obj_create(config_container);
-    lv_obj_set_size(footer, 730, 60);
-    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 20);
+    lv_obj_set_size(footer, 730, 62);
+    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 22);
     lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(footer, 0, 0);  // Sin bordes redondeados
 
     /* Botón para agregar productos */
     float_btn_add = lv_btn_create(footer);
@@ -1776,10 +1778,11 @@ void create_general_config_screen(void)
     /* Ajustar la posición del tabview para que no se cruce con el header */
     lv_obj_set_style_pad_top(lv_tabview_get_content(tabview), 30, 0);  // Agregar un margen superior
 
-    /* Bajar la botonera de la tabview */
+    /* Configurar la barra de botones para que se ajuste al área completa y se alinee abajo */
     lv_obj_t *tab_btns = lv_tabview_get_tab_btns(tabview);
-    lv_obj_set_style_pad_bottom(tab_btns, -60, 0);  // Agregar un margen inferior
-
+    lv_obj_set_size(tab_btns, 70, lv_disp_get_ver_res(NULL)); // Altura total menos el header
+    lv_obj_align(tab_btns, LV_ALIGN_BOTTOM_LEFT, 0, 0); // Alinear abajo a la izquierda
+    lv_obj_set_style_pad_top(tab_btns, 0, 100); // Agregar margen superior
     /* Desactivar el scroll del contenido del tabview */
     lv_obj_clear_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_SCROLLABLE);
 
