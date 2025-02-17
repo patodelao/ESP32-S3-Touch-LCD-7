@@ -1670,16 +1670,16 @@ void product_config(void){
 
     /* Crear un contenedor principal para la configuración con tamaño fijo */
     lv_obj_t *config_container = lv_obj_create(parent);
-    lv_obj_set_size(config_container, 750, 455);
+    lv_obj_set_size(config_container, 730, 455);
     //lv_obj_set_size(config_container,lv_disp_get_hor_res(NULL),lv_disp_get_ver_res(NULL));
-    lv_obj_align(config_container, LV_ALIGN_CENTER, -25, 15);
+    lv_obj_align(config_container, LV_ALIGN_CENTER, -35, 15);
     lv_obj_set_style_bg_color(config_container, lv_color_make(240,240,240), 0);
     lv_obj_clear_flag(config_container, LV_OBJ_FLAG_SCROLLABLE);    // Desactivar scroll
 
     /* --- HEADER --- */
     lv_obj_t *header = lv_obj_create(config_container);
-    lv_obj_set_size(header, 750, 60);
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -25);
+    lv_obj_set_size(header, 730, 60);
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -30);
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);  // Desactivar scroll
     lv_obj_t *title_label = lv_label_create(header);
     lv_label_set_text(title_label, "Configuración de productos:");
@@ -1688,8 +1688,8 @@ void product_config(void){
 
     /* --- MENÚ --- */
     lv_obj_t *menu_container = lv_obj_create(config_container);
-    lv_obj_set_size(menu_container, 700, 350);  // Resta header (50) y footer (60)
-    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, -25, 20);
+    lv_obj_set_size(menu_container, 730, 350);  // Resta header (50) y footer (60)
+    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 30);
     lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(menu_container, LV_SCROLLBAR_MODE_OFF);
     lv_obj_clear_flag(menu_container, LV_OBJ_FLAG_SCROLLABLE);
