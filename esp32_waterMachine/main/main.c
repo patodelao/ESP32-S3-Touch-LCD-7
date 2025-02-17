@@ -204,6 +204,8 @@ lv_obj_t * create_base_screen(void) {
     
     // Crear el header en la parte superior
     create_header(base);
+
+    
     
     // Crear un contenedor para el contenido, debajo del header
     lv_obj_t * content = lv_obj_create(base);
@@ -1672,7 +1674,7 @@ void product_config(void){
     lv_obj_t *config_container = lv_obj_create(parent);
     lv_obj_set_size(config_container, 730, 455);
     //lv_obj_set_size(config_container,lv_disp_get_hor_res(NULL),lv_disp_get_ver_res(NULL));
-    lv_obj_align(config_container, LV_ALIGN_CENTER, -35, 15);
+    lv_obj_align(config_container, LV_ALIGN_CENTER, -35, -15); // altura buena incluyendo HEADER DEL SISTEMA
     lv_obj_set_style_bg_color(config_container, lv_color_make(240,240,240), 0);
     lv_obj_clear_flag(config_container, LV_OBJ_FLAG_SCROLLABLE);    // Desactivar scroll
 
@@ -1689,7 +1691,7 @@ void product_config(void){
     /* --- MENÚ --- */
     lv_obj_t *menu_container = lv_obj_create(config_container);
     lv_obj_set_size(menu_container, 730, 350);  // Resta header (50) y footer (60)
-    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 25);
     lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(menu_container, LV_SCROLLBAR_MODE_OFF);
     lv_obj_clear_flag(menu_container, LV_OBJ_FLAG_SCROLLABLE);
@@ -1697,8 +1699,8 @@ void product_config(void){
     /* Crear el menú dentro del contenedor */
     menu = lv_menu_create(menu_container);
     lv_obj_clear_flag(menu, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(menu, 800, 300);
-    lv_obj_align(menu, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_size(menu, 800, 330);
+    lv_obj_align(menu, LV_ALIGN_TOP_MID, 70, 0);
 
     /* Crear la página principal del menú y asignarla */
     main_page = lv_menu_page_create(menu, NULL);
@@ -1709,8 +1711,8 @@ void product_config(void){
 
     /* --- FOOTER --- */
     lv_obj_t *footer = lv_obj_create(config_container);
-    lv_obj_set_size(footer, 800, 60);
-    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(footer, 730, 60);
+    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 20);
     lv_obj_clear_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Botón para agregar productos */
@@ -1768,12 +1770,15 @@ void create_general_config_screen(void)
     /* Crear el tabview principal en la pantalla */
     lv_obj_t *tabview = lv_tabview_create(lv_scr_act(), LV_DIR_LEFT, 70);
     lv_obj_set_style_bg_color(tabview, lv_palette_lighten(LV_PALETTE_BLUE_GREY, 2), 0);
-    // BORRAR lv_obj_set_size(tabview,70,480);
+ 
+    create_header(lv_scr_act());
 
-    /* Limitar la altura de la barra de menú */
-    //lv_obj_t *tab_btns = lv_tabview_get_tab_btns(tabview);
-    //lv_obj_set_height(tab_btns, 455);  // Aquí defines la altura deseada
-    //lv_obj_align(tab_btns, LV_ALIGN_TOP_LEFT, 0, 25);
+    /* Ajustar la posición del tabview para que no se cruce con el header */
+    lv_obj_set_style_pad_top(lv_tabview_get_content(tabview), 30, 0);  // Agregar un margen superior
+
+    /* Bajar la botonera de la tabview */
+    lv_obj_t *tab_btns = lv_tabview_get_tab_btns(tabview);
+    lv_obj_set_style_pad_bottom(tab_btns, -60, 0);  // Agregar un margen inferior
 
     /* Desactivar el scroll del contenido del tabview */
     lv_obj_clear_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_SCROLLABLE);
