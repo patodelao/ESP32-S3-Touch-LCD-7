@@ -121,7 +121,7 @@ static lv_obj_t *create_textarea(lv_obj_t *parent, const char *placeholder);
 static void save_button_event_cb(lv_event_t *e);
 static void delete_last_item(lv_event_t *e);
 static void delete_all_items(lv_event_t *e);
-static void go_to_main_screen(lv_event_t *e);
+static void save_objects_btn(lv_event_t *e);
 static void transition_to_main_screen(void *param);
 static void create_new_product(lv_event_t *e);
 static void product_config_in_tab(lv_obj_t *parent);
@@ -441,11 +441,11 @@ static void transition_to_main_screen(void *param)
 }
 
 // Botón para salir (guarda y vuelve a la pantalla principal)
-static void go_to_main_screen(lv_event_t *e)
+static void save_objects_btn(lv_event_t *e)
 {
     ESP_LOGI(TAG, "Go to main screen button pressed");
     save_products_to_nvs();
-    lv_async_call(transition_to_main_screen, NULL);
+    //lv_async_call(transition_to_main_screen, NULL);
 }
 
 // Crea un nuevo producto y su correspondiente sub-página
@@ -551,12 +551,12 @@ static void product_config_in_tab(lv_obj_t *parent)
     lv_obj_add_event_cb(float_btn_del_all, delete_all_items, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del_all, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del_all, LV_SYMBOL_TRASH, 0);
-    lv_obj_t *back_btn = lv_btn_create(footer);
-    lv_obj_set_size(back_btn, 80, 40);
-    lv_obj_align(back_btn, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_t *btn_label = lv_label_create(back_btn);
-    lv_label_set_text(btn_label, "Menú");
-    lv_obj_add_event_cb(back_btn, go_to_main_screen, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *save_btn = lv_btn_create(footer);
+    lv_obj_set_size(save_btn, 40, 40);
+    lv_obj_align(save_btn, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_t *btn_label = lv_label_create(save_btn);
+    lv_label_set_text(btn_label, LV_SYMBOL_SAVE);
+    lv_obj_add_event_cb(save_btn, save_objects_btn, LV_EVENT_CLICKED, NULL);
     ESP_LOGI(TAG, "Product configuration UI created successfully");
 }
 
