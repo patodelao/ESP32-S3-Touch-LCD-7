@@ -98,6 +98,7 @@ static lv_obj_t *float_btn_del_all;
 // -------------------------
 // DECLARACIONES DE FUNCIONES USADAS
 // -------------------------
+static void product_item_event_cb(lv_event_t * e);
 void init_nvs(void);
 static void init_uart(void);
 esp_lcd_panel_handle_t init_lcd_panel(void);
@@ -505,7 +506,7 @@ static void product_config_in_tab(lv_obj_t *parent)
     lv_obj_t *header = lv_obj_create(config_container);
     ESP_LOGI(TAG, "Header created");
     lv_obj_set_size(header, 730, 60);
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -35);
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -10);
     lv_obj_t *title_label = lv_label_create(header);
     lv_label_set_text(title_label, "Configuración de productos:");
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
@@ -514,7 +515,7 @@ static void product_config_in_tab(lv_obj_t *parent)
     lv_obj_t *menu_container = lv_obj_create(config_container);
     ESP_LOGI(TAG, "Menu container created");
     lv_obj_set_size(menu_container, 730, 350);
-    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 25);
+    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 50);
     lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
     lv_obj_clear_flag(menu_container, LV_OBJ_FLAG_SCROLLABLE);
     menu = lv_menu_create(menu_container);
@@ -807,19 +808,80 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
 
 
 
+// Modifica (o reemplaza) la función create_main_screen en main1.c por algo similar a:
 void create_main_screen(lv_obj_t *parent) {
-    // Crea un botón centrado en el área 'parent'
-    lv_obj_t *btn_to_config = lv_btn_create(parent);
-    lv_obj_set_size(btn_to_config, 100, 50);
-    lv_obj_align(btn_to_config, LV_ALIGN_CENTER, 0, 0);
+    // --- Panel Exhibidor de Productos ---
+    lv_obj_t *exhibitor_panel = lv_obj_create(parent);
+    lv_obj_set_size(exhibitor_panel, 800, 250);
+    // Ubica el panel en la parte superior del área de contenido
+    lv_obj_align(exhibitor_panel, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_set_style_pad_all(exhibitor_panel, 10, 0);
+    lv_obj_set_style_bg_color(exhibitor_panel, lv_palette_main(LV_PALETTE_GREY), 0);
+    // Configura el layout para distribuir los ítems de forma flexible
+    lv_obj_set_layout(exhibitor_panel, LV_LAYOUT_FLEX);
+    lv_obj_set_style_flex_flow(exhibitor_panel, LV_FLEX_FLOW_ROW, 0);
+    lv_obj_set_flex_align(exhibitor_panel, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     
-    // Crea un label dentro del botón
-    lv_obj_t *label = lv_label_create(btn_to_config);
-    lv_label_set_text(label, "Config");
-    lv_obj_center(label);
+    // --- Carga y muestra los productos almacenados en NVS ---
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+    if (err == ESP_OK) {
+        uint32_t product_count = 0;
+        nvs_get_u32(my_handle, "product_count", &product_count);
+        if (product_count > 0) {
+            for (uint32_t i = 0; i < product_count; i++) {
+                char key[20];
+                char product_name[32];
+                size_t len = sizeof(product_name);
+                snprintf(key, sizeof(key), "product_%lu", i);
+                if (nvs_get_str(my_handle, key, product_name, &len) == ESP_OK) {
+                    // Intenta obtener también el precio; si falla, asigna un valor por defecto
+                    char price_key[20];
+                    char product_price[16];
+                    size_t price_len = sizeof(product_price);
+                    snprintf(price_key, sizeof(price_key), "price_%lu", i);
+                    if(nvs_get_str(my_handle, price_key, product_price, &price_len) != ESP_OK){
+                        strcpy(product_price, "50");
+                    }
+                    
+                    // Crea el "item" para el producto
+                    lv_obj_t *item = lv_obj_create(exhibitor_panel);
+                    lv_obj_set_size(item, 120, 100);
+                    lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), 0);
+                    // Agrega el callback para el toque del item
+                    lv_obj_add_event_cb(item, product_item_event_cb, LV_EVENT_CLICKED, NULL);
+                    
+                    // Crea y posiciona la etiqueta con el nombre del producto
+                    lv_obj_t *name_label = lv_label_create(item);
+                    lv_label_set_text(name_label, product_name);
+                    lv_obj_align(name_label, LV_ALIGN_TOP_MID, 0, 5);
+                    
+                    // Crea y posiciona la etiqueta con el precio formateado
+                    char formatted_price[32];
+                    snprintf(formatted_price, sizeof(formatted_price), "$%s", product_price);
+                    lv_obj_t *price_label = lv_label_create(item);
+                    lv_label_set_text(price_label, formatted_price);
+                    lv_obj_align(price_label, LV_ALIGN_BOTTOM_MID, 0, -5);
+                }
+            }
+        } else {
+            // Si no hay productos, muestra un mensaje
+            lv_obj_t *label = lv_label_create(exhibitor_panel);
+            lv_label_set_text(label, "No hay productos");
+            lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+        }
+        nvs_close(my_handle);
+    }
     
-    // Registra el callback para cambiar de pantalla al hacer clic
-    lv_obj_add_event_cb(btn_to_config, btn_to_config_event_cb, LV_EVENT_CLICKED, NULL);
+    // --- Botón de Configuración ---
+    lv_obj_t *btn_config = lv_btn_create(parent);
+    lv_obj_set_size(btn_config, 200, 50);
+    lv_obj_align(btn_config, LV_ALIGN_BOTTOM_MID, 0, -20);
+    // Usa el callback que ya tienes para ir a la pantalla de configuración
+    lv_obj_add_event_cb(btn_config, btn_to_config_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_config = lv_label_create(btn_config);
+    lv_label_set_text(label_config, "Configurar Productos");
+    lv_obj_center(label_config);
 }
 
 
@@ -875,6 +937,84 @@ static void update_clock_cb(lv_timer_t * timer) {
     lv_label_set_text(global_clock_label, time_str);
     save_epoch(simulated_epoch);
 }
+
+
+
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+static void product_item_event_cb(lv_event_t * e) {
+    // Obtén el ítem que disparó el evento
+    lv_obj_t * item = lv_event_get_target(e);
+    // Obtén el contenedor padre (el panel de productos)
+    lv_obj_t * product_panel = lv_obj_get_parent(item);
+    
+    // Si el ítem ya está seleccionado (verde), se deselecciona (vuelve azul)
+    lv_color_t current_color = lv_obj_get_style_bg_color(item, LV_PART_MAIN);
+    if(current_color.full == lv_color_make(0, 255, 0).full) {
+        lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+    } else {
+        // Si no, se deseleccionan todos y se marca este en verde
+        uint32_t child_count = lv_obj_get_child_cnt(product_panel);
+        for(uint32_t i = 0; i < child_count; i++){
+            lv_obj_t * child = lv_obj_get_child(product_panel, i);
+            lv_obj_set_style_bg_color(child, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+        }
+        lv_obj_set_style_bg_color(item, lv_color_make(0, 255, 0), LV_PART_MAIN);
+    }
+}
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
