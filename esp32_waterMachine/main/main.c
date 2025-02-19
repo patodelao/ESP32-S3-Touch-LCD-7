@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  */
-
+#include <time.h> 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -82,6 +82,8 @@ static SemaphoreHandle_t lvgl_mux = NULL; // Mutex para LVGL
 static lv_obj_t *global_header = NULL;         // Contenedor del header (barra de notificaciones)
 static lv_obj_t *global_content = NULL;        // Contenedor donde se inyectan las pantallas
 static lv_obj_t *global_clock_label = NULL;    // Label que muestra la hora en el header
+
+static time_t simulated_epoch = 1739984400;    // 2025-12-31 23:00:00
 
 // Variables para la configuración de productos
 #define MAX_ITEMS 10
@@ -731,7 +733,8 @@ void create_main_structure(void) {
 
     // Crea el label para el reloj y lo guarda globalmente
     global_clock_label = lv_label_create(global_header);
-    lv_label_set_text(global_clock_label, "00:00");  // Valor inicial (se actualizará luego)
+    lv_label_set_text(global_clock_label, "00:00");  // Valor inicial (se actualizará luego)+
+    lv_obj_set_style_text_color(global_clock_label, lv_color_white(), 0);
     lv_obj_align(global_clock_label, LV_ALIGN_CENTER, 0, 0);
 
     // --- Área de Contenido ---
@@ -819,14 +822,59 @@ void create_main_screen(lv_obj_t *parent) {
     lv_obj_add_event_cb(btn_to_config, btn_to_config_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
-static void update_clock_cb(lv_timer_t * timer) {
-    if(global_clock_label != NULL) {
-        char time_str[6];
-        snprintf(time_str, sizeof(time_str), "12:34");
-        lv_label_set_text(global_clock_label, time_str);
+
+
+
+
+// Guarda el valor epoch actual en la NVS
+void save_epoch(time_t epoch) {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if (err == ESP_OK) {
+        // Si el epoch se guarda como 32 bits:
+        err = nvs_set_u32(my_handle, "last_epoch", (uint32_t)epoch);
+        if (err == ESP_OK) {
+            nvs_commit(my_handle);
+        }
+        nvs_close(my_handle);
     }
 }
 
+// Recupera el último valor epoch almacenado en la NVS.
+// Si no existe, se puede usar un valor por defecto.
+time_t load_epoch(void) {
+    nvs_handle_t my_handle;
+    uint32_t stored_epoch = 0;
+    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+    if (err == ESP_OK) {
+        if (nvs_get_u32(my_handle, "last_epoch", &stored_epoch) != ESP_OK) {
+            // No se encontró el valor, se usa un valor por defecto, por ejemplo:
+            stored_epoch = 1739984400; // 19/02/2025 17:00:00
+        }
+        nvs_close(my_handle);
+    } else {
+        // En caso de error, se usa el valor por defecto
+        stored_epoch = 1739984400;
+    }
+    return (time_t)stored_epoch;
+}
+
+
+
+
+static void update_clock_cb(lv_timer_t * timer) {
+    // Incrementa el epoch en 1 cada segundo
+    simulated_epoch++;
+    
+    struct tm timeinfo;
+    localtime_r(&simulated_epoch, &timeinfo);  // Convierte el epoch a hora local
+    char time_str[9];  // "HH:MM:SS" necesita 8 caracteres + 1 para el nulo
+    // Formatea la hora en formato HH:MM:SS
+    strftime(time_str, sizeof(time_str), "%H:%M:%S", &timeinfo);
+    
+    lv_label_set_text(global_clock_label, time_str);
+    save_epoch(simulated_epoch);
+}
 
 
 
@@ -844,6 +892,8 @@ void app_main(void)
 {
     init_nvs();
     init_uart();
+
+    simulated_epoch = load_epoch();
     
     static lv_disp_draw_buf_t disp_buf;
     static lv_disp_drv_t disp_drv;
