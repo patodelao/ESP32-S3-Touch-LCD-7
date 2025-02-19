@@ -89,6 +89,10 @@ static lv_obj_t *float_btn_add;
 static lv_obj_t *float_btn_del;
 static lv_obj_t *float_btn_del_all;
 
+// Declaramos punteros globales para el header y el content
+static lv_obj_t *global_header = NULL;
+static lv_obj_t *global_content = NULL;
+
 // -------------------------
 // DECLARACIONES DE FUNCIONES USADAS
 // -------------------------
@@ -119,8 +123,10 @@ static void transition_to_main_screen(void *param);
 static void create_new_product(lv_event_t *e);
 static void product_config_in_tab(lv_obj_t *parent);
 void create_general_config_screen(void);
+void create_general_config_screen_in_content(lv_obj_t *parent);
 void save_products_to_nvs(void);
 void load_products_for_config(void);
+void switch_screen(void (*create_screen)(lv_obj_t* parent));
 
 // -------------------------
 // IMPLEMENTACIONES
@@ -362,6 +368,124 @@ void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_d
 // INTERFAZ DE CONFIGURACIÓN DE PRODUCTOS
 // -------------------------
 
+
+ 
+ static void text_area_focused(lv_event_t * e)
+ {
+     lv_obj_t * kb = lv_event_get_user_data(e);
+     lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
+ }
+ 
+ static void text_area_defocused(lv_event_t * e)
+ {
+     lv_obj_t * kb = lv_event_get_user_data(e);
+     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+ }
+ 
+ static void close_password_dialog(lv_event_t * e)
+ {
+     lv_obj_t * modal = lv_event_get_target(e);
+     modal = lv_obj_get_parent(modal); // Obtener el contenedor padre (el cuadro de diálogo)
+     lv_obj_del(modal);
+ }
+ 
+ 
+ static void check_password(lv_event_t * e){
+
+    lv_obj_t * ta = lv_event_get_user_data(e);
+    const char * entered_text = lv_textarea_get_text(ta);
+ 
+    if (strcmp(entered_text, "") == 0) { //FIJAR CONTRASEÑA
+        printf("Acceso permitido\n");
+        lv_obj_clean(lv_scr_act());  // Limpiar pantalla actual
+        //product_config();  // Ir a la configuración
+        create_general_config_screen();
+    } else {
+        printf("Contraseña incorrecta\n");
+        lv_textarea_set_text(ta, "");  // Limpiar campo de texto
+    }
+ }
+ 
+ 
+ static void open_password_dialog(lv_event_t * e){
+    /* Crear el modal flotante */
+    lv_obj_t * modal = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(modal, 250, 200);
+    lv_obj_align(modal, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_radius(modal, 10, 0);
+
+    /* Título del cuadro de diálogo */
+    lv_obj_t * title = lv_label_create(modal);
+    lv_label_set_text(title, "Ingrese contraseña:");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    /* Crear el teclado */
+    lv_obj_t * kb = lv_keyboard_create(lv_scr_act());
+    lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN); // Ocultar por defecto
+
+    /* Campo de texto para ingresar la contraseña */
+    lv_obj_t * password_ta = lv_textarea_create(modal);
+    lv_textarea_set_password_mode(password_ta, true);  // Ocultar caracteres
+    lv_textarea_set_one_line(password_ta, true);
+    lv_textarea_set_placeholder_text(password_ta, "Contraseña");
+    lv_obj_set_size(password_ta, 200, 40);
+    lv_obj_clear_flag(password_ta, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(password_ta, LV_ALIGN_CENTER, 0, 0);
+    
+    /* Asignar el teclado al campo de texto */
+    lv_keyboard_set_textarea(kb, password_ta);
+    
+    /* Usar las funciones ya creadas para mostrar y ocultar el teclado */
+    lv_obj_add_event_cb(password_ta, text_area_focused, LV_EVENT_FOCUSED, kb);
+    lv_obj_add_event_cb(password_ta, text_area_defocused, LV_EVENT_DEFOCUSED, kb);
+
+    /* Botón de confirmación */
+    lv_obj_t * confirm_btn = lv_btn_create(modal);
+    lv_obj_set_size(confirm_btn, 80, 40);
+    lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -10, 0);
+    lv_obj_t * label = lv_label_create(confirm_btn);
+    lv_label_set_text(label, "OK");
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_add_event_cb(confirm_btn, check_password, LV_EVENT_CLICKED, password_ta);
+
+    /* Botón de cancelar */
+    lv_obj_t * cancel_btn = lv_btn_create(modal);
+    lv_obj_set_size(cancel_btn, 90, 40);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 10, 0);
+    lv_obj_t * cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "Cancelar");
+    lv_obj_align(cancel_label, LV_ALIGN_RIGHT_MID, 5, 0); // Alinear el texto a la izquierda dentro del botón
+    
+
+    lv_obj_add_event_cb(cancel_btn, close_password_dialog, LV_EVENT_CLICKED, NULL);
+}
+
+static void product_item_event_cb(lv_event_t * e) {
+    // Obtener el producto que disparó el evento
+    lv_obj_t * item = lv_event_get_target(e);
+    // Obtener el contenedor padre (panel de productos)
+    lv_obj_t * product_panel = lv_obj_get_parent(item);
+    
+    // Revisar si el producto clickeado ya está verde
+    lv_color_t current_color = lv_obj_get_style_bg_color(item, LV_PART_MAIN);
+    if(current_color.full == lv_color_make(0, 255, 0).full) {
+        // Si ya está verde, lo deseleccionamos (lo volvemos azul)
+        lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+    } else {
+        // Si está azul, recorrer todos los productos y ponerlos en azul
+        uint32_t child_count = lv_obj_get_child_cnt(product_panel);
+        for(uint32_t i = 0; i < child_count; i++){
+            lv_obj_t * child = lv_obj_get_child(product_panel, i);
+            lv_obj_set_style_bg_color(child, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
+        }
+        // Marcar el producto clickeado en verde
+        lv_obj_set_style_bg_color(item, lv_color_make(0, 255, 0), LV_PART_MAIN);
+    }
+}
+
+ 
+ 
 // Crea un textarea simple
 static lv_obj_t *create_textarea(lv_obj_t *parent, const char *placeholder)
 {
@@ -427,7 +551,8 @@ static void transition_to_main_screen(void *param)
 {
     ESP_LOGI(TAG, "Transitioning to main screen");
     lv_obj_clean(lv_scr_act());
-    create_general_config_screen();
+    //create_general_config_screen();
+    switch_screen(create_general_config_screen_in_content);
 }
 
 // Botón para salir (guarda y vuelve a la pantalla principal)
@@ -472,73 +597,105 @@ static void create_new_product(lv_event_t *e)
 }
 
 // Crea la parte de configuración de productos en una pestaña
-static void product_config_in_tab(lv_obj_t *parent)
-{
-    ESP_LOGI(TAG, "Creating product configuration in tab");
-    lv_obj_set_size(parent, 800, 480);
-    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *config_container = lv_obj_create(parent);
-    ESP_LOGI(TAG, "Config container created");
-    lv_obj_align(config_container, LV_ALIGN_CENTER, -35, -15);
-    lv_obj_set_size(config_container, 750, 455);
-    lv_obj_set_style_bg_color(config_container, lv_color_make(240,240,240), 0);
 
-    // Header
+
+static void product_config_in_tab(lv_obj_t *parent) {
+    ESP_LOGI(TAG, "Creating product configuration in tab");
+
+    /* Actualiza el layout del padre y obtiene sus dimensiones */
+    lv_obj_update_layout(parent);
+    lv_coord_t parent_w = lv_obj_get_width(parent);
+    lv_coord_t parent_h = lv_obj_get_height(parent);
+    if(parent_w == 0) parent_w = LV_HOR_RES;
+    if(parent_h == 0) parent_h = LV_VER_RES;
+
+    /* Contenedor principal que agrupa header, menú y footer */
+    lv_obj_t *config_container = lv_obj_create(parent);
+    lv_obj_clear_flag(config_container, LV_OBJ_FLAG_SCROLLABLE);    // No se puede hacer scroll
+    lv_obj_set_size(config_container, parent_w - 10, parent_h - 10);
+    lv_obj_center(config_container);
+    lv_obj_set_style_bg_color(config_container, lv_color_make(240, 240, 240), 0);
+
+    /* --- HEADER --- */
     lv_obj_t *header = lv_obj_create(config_container);
-    ESP_LOGI(TAG, "Header created");
-    lv_obj_set_size(header, 730, 60);
-    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, -35);
+    lv_obj_set_size(header, 730, 50);
+    /* Se alinea cerca del tope con un margen de 10 px */
+    lv_obj_align(header, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_set_style_bg_color(header, lv_color_hex3(0x333), 0);
+    lv_obj_set_style_pad_all(header, 5, 0);
+    
     lv_obj_t *title_label = lv_label_create(header);
     lv_label_set_text(title_label, "Configuración de productos:");
-    lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_color(title_label, lv_color_hex3(0xFFF), 0);
+    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_16, 0);
+    lv_obj_center(title_label);
 
-    // Menú de productos
+    /* --- ÁREA DE MENÚ --- */
+    /* Se asigna una altura fija para el área del menú */
+    lv_coord_t menu_h = 300;
     lv_obj_t *menu_container = lv_obj_create(config_container);
-    ESP_LOGI(TAG, "Menu container created");
-    lv_obj_set_size(menu_container, 730, 350);
-    lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 25);
+    lv_obj_set_size(menu_container, 750, menu_h);
+    /* Se posiciona justo debajo del header con un margen de 10 px */
+    lv_obj_align_to(menu_container, header, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
     lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
     lv_obj_clear_flag(menu_container, LV_OBJ_FLAG_SCROLLABLE);
+
     menu = lv_menu_create(menu_container);
-    ESP_LOGI(TAG, "Menu created for products");
     lv_obj_clear_flag(menu, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(menu, 730, 300);
-    lv_obj_align(menu, LV_ALIGN_TOP_MID, 0, 0);
-    main_page = lv_menu_page_create(menu, NULL);
+    lv_obj_set_size(menu, lv_obj_get_width(menu_container), lv_obj_get_height(menu_container));
+    lv_obj_center(menu);
+    main_page = lv_menu_page_create(menu, "Productos");
+    lv_obj_align(main_page, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_menu_set_page(menu, main_page);
+
     load_products_for_config();
 
-    // Footer con botones
+    /* --- FOOTER --- */
     lv_obj_t *footer = lv_obj_create(config_container);
-    ESP_LOGI(TAG, "Footer created for product configuration");
-    lv_obj_set_size(footer, 730, 62);
-    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 22);
+    lv_obj_set_size(footer, lv_obj_get_width(config_container) - 20, 60);
+    lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, -10);
+
+    /* Botón Agregar Producto */
     float_btn_add = lv_btn_create(footer);
     lv_obj_set_size(float_btn_add, 50, 50);
-    lv_obj_align(float_btn_add, LV_ALIGN_RIGHT_MID, -50, 0);
+    lv_obj_align(float_btn_add, LV_ALIGN_RIGHT_MID, -10, 0);
     lv_obj_add_event_cb(float_btn_add, create_new_product, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_add, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_add, LV_SYMBOL_PLUS, 0);
+
+    /* Botón Eliminar Último Producto */
     float_btn_del = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del, 50, 50);
-    lv_obj_align(float_btn_del, LV_ALIGN_RIGHT_MID, -120, 0);
+    lv_obj_align(float_btn_del, LV_ALIGN_RIGHT_MID, -70, 0);
     lv_obj_add_event_cb(float_btn_del, delete_last_item, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del, LV_SYMBOL_MINUS, 0);
+
+    /* Botón Eliminar Todos los Productos */
     float_btn_del_all = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del_all, 50, 50);
-    lv_obj_align(float_btn_del_all, LV_ALIGN_RIGHT_MID, -170, 0);
+    lv_obj_align(float_btn_del_all, LV_ALIGN_RIGHT_MID, -130, 0);
     lv_obj_add_event_cb(float_btn_del_all, delete_all_items, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del_all, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del_all, LV_SYMBOL_TRASH, 0);
+
+    /* Botón Volver al Menú Principal */
     lv_obj_t *back_btn = lv_btn_create(footer);
     lv_obj_set_size(back_btn, 80, 40);
-    lv_obj_align(back_btn, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(back_btn, LV_ALIGN_LEFT_MID, 10, 0);
     lv_obj_t *btn_label = lv_label_create(back_btn);
     lv_label_set_text(btn_label, "Menú");
+    lv_obj_center(btn_label);
     lv_obj_add_event_cb(back_btn, go_to_main_screen, LV_EVENT_CLICKED, NULL);
+
     ESP_LOGI(TAG, "Product configuration UI created successfully");
 }
+
+
+
+
+
+
 
 // Crea la pantalla principal (con tabview) de la interfaz
 void create_general_config_screen(void)
@@ -552,6 +709,7 @@ void create_general_config_screen(void)
     // Se crean 3 pestañas
     lv_obj_t *tab1 = lv_tabview_add_tab(tabview, "Tab 1");
     lv_obj_t *tab2 = lv_tabview_add_tab(tabview, "Config.\n  de\nProductos");
+    lv_obj_set_size(tab2, 730, 350);
     lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "Tab 3");
 
     lv_obj_t *label = lv_label_create(tab1);
@@ -649,6 +807,196 @@ void load_products_for_config(void)
     ESP_LOGI(TAG, "Finished loading products from NVS. Total products: %lu", cont_index);
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// -----------------------------------------------------------------------------------------------------------
+void switch_screen(void (*create_screen)(lv_obj_t* parent)) {
+    // Limpia el contenedor content (borra sus hijos)
+    lv_obj_clean(global_content);
+    // Llama a la función que crea la pantalla, usando global_content como padre
+    create_screen(global_content);
+}
+
+void create_main_structure(void) {
+    // Crea un contenedor principal que ocupa toda la pantalla
+    lv_obj_t *main_container = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(main_container, LV_HOR_RES, LV_VER_RES);
+    lv_obj_clear_flag(main_container, LV_OBJ_FLAG_SCROLLABLE);  // No se puede hacer scroll
+
+    // Crea el header (barra de notificaciones)
+    global_header = lv_obj_create(main_container);
+    lv_obj_clear_flag(global_header, LV_OBJ_FLAG_SCROLLABLE);   // No se puede hacer scroll
+    lv_obj_set_size(global_header, LV_HOR_RES, 30);  // Altura de 50 píxeles
+    lv_obj_align(global_header, LV_ALIGN_TOP_MID, 0, -28);
+    lv_obj_set_style_bg_color(global_header, lv_color_hex3(0x333), 0);
+    lv_obj_set_style_pad_all(global_header, 5, 0);
+
+    // Ejemplo: etiqueta para mostrar la hora
+    lv_obj_t *lbl_time = lv_label_create(global_header);
+    lv_obj_clear_flag(lbl_time, LV_OBJ_FLAG_SCROLLABLE);
+    lv_label_set_text(lbl_time, "00:00");
+    lv_obj_align(lbl_time, LV_ALIGN_CENTER, 0, 0);
+
+    // Crea el contenedor 'content' justo debajo del header
+    global_content = lv_obj_create(main_container);
+    lv_obj_clear_flag(global_content, LV_OBJ_FLAG_SCROLLABLE);  // No se puede hacer scroll
+    lv_obj_set_style_pad_all(global_content, 0, 0);
+    lv_obj_set_style_border_width(global_content, 2, 0); // Establece un borde de 3 píxeles
+    lv_obj_set_style_border_color(global_content, lv_color_black(), 0);
+
+    lv_obj_set_size(global_content, LV_HOR_RES, LV_VER_RES - 20);
+    lv_obj_align(global_content, LV_ALIGN_BOTTOM_MID, 0, 25);
+    lv_obj_clear_flag(global_content, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+void create_general_config_screen_in_content(lv_obj_t *parent) {
+    // Crea un tabview dentro de 'parent' en lugar de lv_scr_act()
+    lv_obj_t *tabview = lv_tabview_create(parent, LV_DIR_LEFT, 70);
+    lv_obj_clear_flag(tabview, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(tabview, lv_palette_lighten(LV_PALETTE_BLUE_GREY, 2), 0);
+
+    // Ajuste del contenido de las pestañas para evitar el scroll
+    lv_obj_t *content = lv_tabview_get_content(tabview);
+    lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_top(content, 0, 0);
+    lv_obj_set_size(content, 750, 300);
+    
+
+    // Se crean 3 pestañas
+    lv_obj_t *tab1 = lv_tabview_add_tab(tabview, "Tab 1");
+    lv_obj_t *tab2 = lv_tabview_add_tab(tabview, "Config.\nProductos");
+    lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "Tab 3");
+
+
+
+    lv_obj_t *label = lv_label_create(tab1);
+    lv_label_set_text(label, "Contenido de Tab 1");
+
+    // En la pestaña 2 se monta la configuración de productos
+    product_config_in_tab(tab2);  // Puedes adaptar esta función si es necesario
+
+    label = lv_label_create(tab3);
+    lv_label_set_text(label, "Contenido de Tab 3");
+}
+
+
+
+
+// -----------------------------------------------------------------------------------------------------------
+void create_main_screen(void) {
+    // Se asume que 'global_content' ya fue creado en create_main_structure.
+    // Limpiamos el contenedor para cargar la nueva pantalla.
+    lv_obj_clean(global_content);
+
+    // Crear el panel de productos dentro de global_content.
+    lv_obj_t *product_panel = lv_obj_create(global_content);
+    lv_obj_set_size(product_panel, 800, 250);
+    lv_obj_clear_flag(product_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(product_panel, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_pad_all(product_panel, 10, 0);
+    lv_obj_set_style_bg_color(product_panel, lv_palette_main(LV_PALETTE_GREY), 0);
+
+    // Configurar el layout FLEX para distribuir los productos equitativamente.
+    lv_obj_set_layout(product_panel, LV_LAYOUT_FLEX);
+    lv_obj_set_style_flex_flow(product_panel, LV_FLEX_FLOW_ROW, 0);
+    lv_obj_set_flex_align(product_panel, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Abrir NVS y cargar productos.
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+    if (err == ESP_OK) {
+        uint32_t product_count = 0;
+        nvs_get_u32(my_handle, "product_count", &product_count);
+
+        if (product_count > 0) {
+            for (uint32_t i = 0; i < product_count; i++) {
+                char key[20];
+                char product_name[32];
+                size_t length = sizeof(product_name);
+                snprintf(key, sizeof(key), "product_%ld", i);
+
+                if (nvs_get_str(my_handle, key, product_name, &length) == ESP_OK) {
+                    // Recuperar el precio asociado.
+                    char price_key[20];
+                    char product_price[16];
+                    size_t price_len = sizeof(product_price);
+                    snprintf(price_key, sizeof(price_key), "price_%ld", i);
+                    esp_err_t err_price = nvs_get_str(my_handle, price_key, product_price, &price_len);
+                    if (err_price != ESP_OK) {
+                        strcpy(product_price, "50");
+                    }
+
+                    // Crear el item (contenedor) para el producto.
+                    lv_obj_t *item = lv_obj_create(product_panel);
+                    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
+                    lv_obj_set_size(item, 120, 100);
+                    lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), 0);
+
+                    // Agregar callback para cambiar el color al hacer clic.
+                    lv_obj_add_event_cb(item, product_item_event_cb, LV_EVENT_CLICKED, NULL);
+
+                    // Crear label para el nombre y alinearlo en la parte superior.
+                    lv_obj_t *name_label = lv_label_create(item);
+                    lv_label_set_text(name_label, product_name);
+                    lv_obj_align(name_label, LV_ALIGN_TOP_MID, 0, 5);
+
+                    // Crear label para el precio y alinearlo en la parte inferior.
+                    char formatted_price[32];
+                    snprintf(formatted_price, sizeof(formatted_price), "$%s", product_price);
+                    lv_obj_t *price_label = lv_label_create(item);
+                    lv_label_set_text(price_label, formatted_price);
+                    lv_obj_align(price_label, LV_ALIGN_BOTTOM_MID, 0, -5);
+                }
+            }
+        } else {
+            // Si no hay productos, se muestra un mensaje.
+            lv_obj_t *label = lv_label_create(product_panel);
+            lv_label_set_text(label, "No hay productos");
+            lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+        }
+
+        nvs_close(my_handle);
+    }
+
+    // Botón de Configuración de Productos
+    lv_obj_t *btn_config = lv_btn_create(global_content);
+    lv_obj_set_size(btn_config, 200, 50);
+    lv_obj_align(btn_config, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_add_event_cb(btn_config, open_password_dialog, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *label_config = lv_label_create(btn_config);
+    lv_label_set_text(label_config, "Configurar Productos");
+    lv_obj_center(label_config);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // -------------------------
 // FUNCIÓN PRINCIPAL (app_main)
 // -------------------------
@@ -671,7 +1019,10 @@ void app_main(void)
     
     if(lvgl_lock(-1)) {
         lv_obj_clean(lv_scr_act());
-        create_general_config_screen();
+        // Crea la estructura principal (header + content)
+        create_main_structure();
+        // Inyecta la pantalla que deseas (por ejemplo, la configuración general)
+        switch_screen(create_general_config_screen_in_content);
         lvgl_unlock();
     }
 }
