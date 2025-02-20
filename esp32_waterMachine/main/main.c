@@ -679,39 +679,10 @@ void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_d
 // INTERFAZ DE CONFIGURACIÓN DE WIFI
 // -------------------------
 
+static bool wifi_manual_disconnect = false;
 
+// Variable global para controlar la inicialización del servicio Wi‑Fi
 
-/*
-static void keyboard_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *keyboard = lv_event_get_target(event);
-    
-    if (code == LV_EVENT_CANCEL || code == LV_EVENT_READY) {
-        lv_obj_t *textarea = lv_keyboard_get_textarea(keyboard);
-        if (textarea) {
-            const char *text = lv_textarea_get_text(textarea);
-            printf("Texto guardado: %s\n", text);
-        }
-        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void textarea_event_handler(lv_event_t *event) {
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *textarea = lv_event_get_target(event);
-    
-    if (code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) {
-        if (!keyboard) {
-            keyboard = lv_keyboard_create(lv_scr_act());
-            lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
-        }
-        lv_keyboard_set_textarea(keyboard, textarea);
-        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-*/
-
-// Variable global para controlar la inicialización
 static bool wifi_initialized = false;
 
 void wifi_service_init(void) {
@@ -744,17 +715,20 @@ void wifi_service_init(void) {
                                                         NULL,
                                                         &instance_got_ip));
 
+    // Inicia el driver Wi‑Fi en modo estación
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
     wifi_initialized = true;
     ESP_LOGI(TAG, "Servicio Wi‑Fi inicializado.");
 }
 
 void wifi_init_sta(const char *ssid, const char *password) {
-    // Asegura que el servicio Wi‑Fi se inicialice solo una vez
-    if(!wifi_initialized) {
+    // Asegura que el servicio Wi‑Fi esté iniciado
+    if (!wifi_initialized) {
         wifi_service_init();
     }
 
-    // Configura la conexión con los parámetros ingresados
     wifi_config_t wifi_config = {
         .sta = {
             .threshold.authmode = WIFI_AUTH_WPA2_PSK,
@@ -763,13 +737,13 @@ void wifi_init_sta(const char *ssid, const char *password) {
     strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
     strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    // Actualiza la configuración y conecta
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_connect());
 
     ESP_LOGI(TAG, "Wi‑Fi initialization completed.");
 
-    // Espera hasta 10 segundos para la conexión
+    // Espera hasta 10 segundos para que se establezca la conexión
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
                                            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
                                            pdFALSE,
@@ -785,13 +759,8 @@ void wifi_init_sta(const char *ssid, const char *password) {
     } else {
         ESP_LOGE(TAG, "Unexpected event");
     }
-
-    // Se limpian los manejadores y se elimina el event group
-    esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, NULL);
-    esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, NULL);
-    vEventGroupDelete(s_wifi_event_group);
+    // No se limpian los handlers ni se elimina el event group, de modo que el driver sigue activo.
 }
-
 
 
 static void connect_event_handler(lv_event_t *event) {
