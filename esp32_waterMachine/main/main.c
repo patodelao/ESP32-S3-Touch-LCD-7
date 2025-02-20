@@ -24,6 +24,13 @@
 #include "esp_lcd_touch_gt911.h"
 #include "esp_timer.h"
 
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_sntp.h"
+#include "lwip/err.h"
+#include "lwip/sys.h"
+
+
 // -------------------------
 // DEFINES Y CONFIGURACIONES
 // -------------------------
@@ -32,6 +39,10 @@
 #define I2C_MASTER_NUM              0
 #define I2C_MASTER_FREQ_HZ          400000
 #define I2C_MASTER_TIMEOUT_MS       1000
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+#define WIFI_DISCONNECTED_BIT BIT2
 
 // Configuración del LCD (ajusta los pines según tu panel)
 #define LCD_PIXEL_CLOCK_HZ          (18 * 1000 * 1000)
@@ -85,6 +96,26 @@ static lv_obj_t *global_clock_label = NULL;    // Label que muestra la hora en e
 
 static time_t simulated_epoch = 1739984400;    // 2025-12-31 23:00:00
 
+// -------------------------
+// VARIABLES PARA LA CONEXIÓN WIFI
+// -------------------------
+#define MAX_NETWORKS 5
+#define DEFAULT_SCAN_LIST_SIZE 10
+
+
+static EventGroupHandle_t s_wifi_event_group;
+static int s_retry_num = 0;
+static lv_obj_t *status_label;
+static lv_obj_t *ssid_field;
+static lv_obj_t *password_field;
+static lv_obj_t *keyboard;
+static lv_obj_t *ssdropdown;
+static TaskHandle_t wifi_task_handle = NULL;
+static wifi_ap_record_t top_networks[MAX_NETWORKS];
+
+
+
+
 // Variables para la configuración de productos
 #define MAX_ITEMS 10
 static uint32_t cont_index = 0;
@@ -122,10 +153,8 @@ static void save_button_event_cb(lv_event_t *e);
 static void delete_last_item(lv_event_t *e);
 static void delete_all_items(lv_event_t *e);
 static void save_objects_btn(lv_event_t *e);
-static void transition_to_main_screen(void *param);
 static void create_new_product(lv_event_t *e);
 static void product_config_in_tab(lv_obj_t *parent);
-void create_general_config_screen(void);
 void save_products_to_nvs(void);
 void load_products_for_config(void);
 void create_general_config_screen_in_content(lv_obj_t *parent);
@@ -135,6 +164,279 @@ void switch_screen(void (*create_screen)(lv_obj_t *parent));
 // -------------------------
 // IMPLEMENTACIONES
 // -------------------------
+
+
+#define MAX_RETRIES 5
+
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,int32_t event_id, void* event_data){
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        if (s_retry_num < MAX_RETRIES) {
+            esp_wifi_connect();
+            s_retry_num++;
+            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+            ESP_LOGI(TAG, "Reintentando conexión al AP");
+        } else {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        }
+        ESP_LOGI(TAG, "Falló la conexión al AP");
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "Obtuvo IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        // Inicializa SNTP para sincronizar la hora vía NTP
+        ESP_LOGI(TAG, "Iniciando SNTP");
+        sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        sntp_setservername(0, "pool.ntp.org");
+        sntp_init();
+    }
+}
+
+// Tarea para manejar la conexiÃ³n Wi-Fi
+static void wifi_connect_task(void *param) {
+    wifi_config_t *wifi_config = (wifi_config_t *)param;
+
+    // Configurar la red Wi-Fi
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, wifi_config);
+    if (err == ESP_OK) {
+        err = esp_wifi_connect();
+    }
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error al conectar a la red Wi-Fi: %s", esp_err_to_name(err));
+        if (lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo conectar a la red Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            lvgl_unlock();
+        }
+    }
+
+    // Liberar memoria del parÃ¡metro recibido
+    free(wifi_config);
+
+    // Terminar la tarea
+    vTaskDelete(NULL);
+}
+
+
+
+static void wifi_scan_task(void *param) {
+    ESP_LOGI(TAG, "Iniciando escaneo Wi-Fi...");
+
+    uint16_t ap_count = 0;
+    
+    // Asigna memoria para almacenar los registros de los AP detectados
+    wifi_ap_record_t *ap_info = malloc(DEFAULT_SCAN_LIST_SIZE * sizeof(wifi_ap_record_t));
+    if (ap_info == NULL) {
+        ESP_LOGE(TAG, "No se pudo asignar memoria para ap_info");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Configuración del escaneo Wi-Fi
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active.min = 50, // Tiempo mínimo por canal (ms)
+        .scan_time.active.max = 500, // Tiempo máximo total (1s)
+    };
+
+    // Iniciar el escaneo
+    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, false));
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo para el escaneo
+
+    // Cancelar escaneo si está activo
+    esp_wifi_scan_stop();
+
+    // Obtener registros
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
+    ESP_LOGI(TAG, "Total de redes detectadas: %u", ap_count);
+
+    uint16_t num_to_fetch = ap_count < DEFAULT_SCAN_LIST_SIZE ? ap_count : DEFAULT_SCAN_LIST_SIZE;
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&num_to_fetch, ap_info));
+
+    // Guardar SSID en el arreglo `top_networks`
+    memset(top_networks, 0, sizeof(top_networks));
+    for (int i = 0; i < num_to_fetch; i++) {
+        top_networks[i] = ap_info[i];
+        ESP_LOGI(TAG, "SSID: %s, RSSI: %d", ap_info[i].ssid, ap_info[i].rssi);
+    }
+    free(ap_info);
+
+    // Actualizar el dropdown en la siguiente actualización de pantalla
+    if (lvgl_lock(-1)) {
+        char dropdown_options[256] = {0};
+        for (int i = 0; i < num_to_fetch; i++) {
+            strcat(dropdown_options, (char *)top_networks[i].ssid);
+            if (i < num_to_fetch - 1) strcat(dropdown_options, "\n");
+        }
+        lv_dropdown_set_options(ssdropdown, dropdown_options);
+        lvgl_unlock();
+    }
+
+    ESP_LOGI(TAG, "Escaneo completado.");
+    wifi_task_handle = NULL; // Resetear el handle de la tarea
+    vTaskDelete(NULL);
+}
+
+
+static lv_obj_t *floating_msgbox = NULL;
+static lv_obj_t *success_msgbox = NULL;
+
+// FunciÃ³n para eliminar el mensaje flotante
+static void remove_floating_msgbox(lv_event_t *event) {
+    if (floating_msgbox != NULL) {
+        lv_obj_del(floating_msgbox);
+        floating_msgbox = NULL;
+    }
+}
+
+static void scan_button_event_handler(lv_event_t *event) {
+    if (wifi_task_handle == NULL) { // Verificar que no haya un escaneo en curso
+        ESP_LOGI(TAG, "Creando tarea de escaneo en Core 0...");
+        xTaskCreatePinnedToCore(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, &wifi_task_handle, 0);
+    } else {
+        ESP_LOGW(TAG, "Escaneo ya en curso...");
+    }
+}
+
+static void connect_button_event_handler(lv_event_t *event) {
+    char selected_ssid[33];
+    lv_dropdown_get_selected_str(ssdropdown, selected_ssid, sizeof(selected_ssid));
+
+    const char *password = lv_textarea_get_text((lv_obj_t *)lv_event_get_user_data(event));
+
+    // Validar que se haya seleccionado un SSID vÃ¡lido
+    if (strcmp(selected_ssid, "Seleccione una red...") == 0 || strlen(selected_ssid) == 0) {
+        ESP_LOGW(TAG, "No se seleccionÃ³ una red vÃ¡lida.");
+        if (lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Seleccione una red vÃ¡lida.", NULL, true);
+            lv_obj_center(msgbox);
+            lvgl_unlock();
+        }
+        return;
+    }
+
+    // Validar que se haya ingresado una contraseÃ±a (si es necesario)
+    if (strlen(password) == 0 || strlen(password) < 8) {
+        ESP_LOGW(TAG, "No se ingresÃ³ una contraseÃ±a vÃ¡lida.");
+        if (lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "Ingrese una contraseÃ±a vÃ¡lida (al menos 8 caracteres).", NULL, true);
+            lv_obj_center(msgbox);
+            lvgl_unlock();
+        }
+        return;
+    }
+
+    ESP_LOGI(TAG, "Intentando conectar a SSID: %s con contraseÃ±a: %s", selected_ssid, password);
+
+    // Mostrar mensaje flotante de conexiÃ³n en proceso
+    if (lvgl_lock(-1)) {
+        floating_msgbox = lv_msgbox_create(NULL, "ConexiÃ³n en proceso", "Conectando a la red...", NULL, true);
+        lv_obj_center(floating_msgbox);
+        lvgl_unlock();
+    }
+
+    // Configura la red Wi-Fi
+    wifi_config_t wifi_config = {
+        .sta = {
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+    strncpy((char *)wifi_config.sta.ssid, selected_ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err == ESP_OK) {
+        err = esp_wifi_connect();
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "ConexiÃ³n exitosa.");
+            if (lvgl_lock(-1)) {
+                success_msgbox = lv_msgbox_create(NULL, "ConexiÃ³n Exitosa", "ConexiÃ³n establecida correctamente.", NULL, true);
+                lv_obj_align(success_msgbox, LV_ALIGN_CENTER, 0, -50); // Ubicar encima del mensaje "ConexiÃ³n en proceso"
+                lvgl_unlock();
+            }
+        }
+    }
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error al iniciar la conexiÃ³n Wi-Fi: %s", esp_err_to_name(err));
+        if (lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo iniciar la conexiÃ³n Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            lvgl_unlock();
+        }
+    }
+}
+
+static void disconnect_button_event_handler(lv_event_t *event) {
+    esp_err_t err = esp_wifi_disconnect();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "DesconexiÃ³n exitosa.");
+        if (lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Desconectado", "Se ha desconectado de la red Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            lvgl_unlock();
+        }
+    } else {
+        ESP_LOGE(TAG, "Error al desconectar: %s", esp_err_to_name(err));
+        if (lvgl_lock(-1)) {
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo desconectar de la red Wi-Fi.", NULL, true);
+            lv_obj_center(msgbox);
+            lvgl_unlock();
+        }
+    }
+}
+
+static lv_obj_t *keyboard;
+
+static void keyboard_event_handler(lv_event_t *event) {
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *keyboard = lv_event_get_target(event);
+
+    if (code == LV_EVENT_CANCEL || code == LV_EVENT_READY) {
+        lv_obj_t *textarea = lv_keyboard_get_textarea(keyboard);
+
+        if (textarea) {
+            // Procesar el texto si es necesario
+            const char *text = lv_textarea_get_text(textarea);
+            printf("Texto guardado: %s\n", text);
+        }
+
+        // Ocultar teclado sin eliminarlo
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void textarea_event_handler(lv_event_t *event) {
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *textarea = lv_event_get_target(event);
+
+    if (code == LV_EVENT_FOCUSED) {
+        if (!keyboard) {
+            // Crear teclado si no existe
+            keyboard = lv_keyboard_create(lv_scr_act());
+            lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
+        }
+
+        // Asociar el teclado al textarea y mostrarlo
+        lv_keyboard_set_textarea(keyboard, textarea);
+
+        // AsegÃºrate de que el teclado no estÃ© oculto
+        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_opa(keyboard, LV_OPA_COVER, LV_PART_MAIN); // Mostrarlo con opacidad completa
+    }
+}
+
+
+
+
 
 // Inicializa NVS
 void init_nvs(void){
@@ -368,6 +670,199 @@ void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_d
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(panel_handle, &cbs, disp_drv));
 }
 
+
+
+
+
+
+// -------------------------
+// INTERFAZ DE CONFIGURACIÓN DE WIFI
+// -------------------------
+
+
+
+/*
+static void keyboard_event_handler(lv_event_t *event) {
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *keyboard = lv_event_get_target(event);
+    
+    if (code == LV_EVENT_CANCEL || code == LV_EVENT_READY) {
+        lv_obj_t *textarea = lv_keyboard_get_textarea(keyboard);
+        if (textarea) {
+            const char *text = lv_textarea_get_text(textarea);
+            printf("Texto guardado: %s\n", text);
+        }
+        lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void textarea_event_handler(lv_event_t *event) {
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *textarea = lv_event_get_target(event);
+    
+    if (code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) {
+        if (!keyboard) {
+            keyboard = lv_keyboard_create(lv_scr_act());
+            lv_obj_add_event_cb(keyboard, keyboard_event_handler, LV_EVENT_ALL, NULL);
+        }
+        lv_keyboard_set_textarea(keyboard, textarea);
+        lv_obj_clear_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+*/
+
+// Variable global para controlar la inicialización
+static bool wifi_initialized = false;
+
+void wifi_service_init(void) {
+    if (wifi_initialized) {
+        ESP_LOGI(TAG, "Servicio Wi‑Fi ya está inicializado.");
+        return;
+    }
+
+    s_wifi_event_group = xEventGroupCreate();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_t *sta_netif = esp_netif_create_default_wifi_sta();
+    assert(sta_netif != NULL);
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+
+    esp_event_handler_instance_t instance_any_id;
+    esp_event_handler_instance_t instance_got_ip;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
+                                                        ESP_EVENT_ANY_ID,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
+                                                        IP_EVENT_STA_GOT_IP,
+                                                        &wifi_event_handler,
+                                                        NULL,
+                                                        &instance_got_ip));
+
+    wifi_initialized = true;
+    ESP_LOGI(TAG, "Servicio Wi‑Fi inicializado.");
+}
+
+void wifi_init_sta(const char *ssid, const char *password) {
+    // Asegura que el servicio Wi‑Fi se inicialice solo una vez
+    if(!wifi_initialized) {
+        wifi_service_init();
+    }
+
+    // Configura la conexión con los parámetros ingresados
+    wifi_config_t wifi_config = {
+        .sta = {
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+        },
+    };
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "Wi‑Fi initialization completed.");
+
+    // Espera hasta 10 segundos para la conexión
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                                           WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                           pdFALSE,
+                                           pdFALSE,
+                                           pdMS_TO_TICKS(10000));
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to Wi‑Fi SSID:%s", ssid);
+        lv_label_set_text(status_label, "Conectado a Wi‑Fi");
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGI(TAG, "Failed to connect to SSID:%s", ssid);
+        lv_label_set_text(status_label, "Error al conectar");
+    } else {
+        ESP_LOGE(TAG, "Unexpected event");
+    }
+
+    // Se limpian los manejadores y se elimina el event group
+    esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, NULL);
+    esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, NULL);
+    vEventGroupDelete(s_wifi_event_group);
+}
+
+
+
+static void connect_event_handler(lv_event_t *event) {
+    const char *ssid = lv_textarea_get_text(ssid_field);
+    const char *password = lv_textarea_get_text(password_field);
+    
+    if (strlen(ssid) == 0 || strlen(password) == 0) {
+        lv_label_set_text(status_label, "Por favor, complete los campos.");
+        return;
+    }
+    lv_label_set_text(status_label, "Conectando...");
+    wifi_init_sta(ssid, password);
+}
+
+
+void create_wifi_settings_widget(lv_obj_t *parent) {
+    // Configurar el fondo del widget (opcional)
+    lv_obj_set_style_bg_color(parent, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
+    
+    // Contenedor principal para la UI de WiFi
+    lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_set_size(container, 300, 400);
+    lv_obj_center(container);
+    lv_obj_set_style_bg_color(container, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(container, LV_OPA_COVER, 0);
+    lv_obj_set_flex_flow(container, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
+
+    // Dropdown para seleccionar SSID
+    ssdropdown = lv_dropdown_create(container);
+    lv_obj_set_width(ssdropdown, 200);
+    lv_dropdown_set_options(ssdropdown, "Seleccione una red...");
+
+    // Campo de texto para ingresar la contraseña
+    lv_obj_t *password_textarea = lv_textarea_create(container);
+    lv_textarea_set_one_line(password_textarea, true);
+    lv_textarea_set_password_mode(password_textarea, true);
+    lv_textarea_set_placeholder_text(password_textarea, "Ingrese contraseña");
+    lv_obj_set_width(password_textarea, 200);
+    lv_obj_add_event_cb(password_textarea, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+
+    // Botón para escanear redes WiFi
+    lv_obj_t *scan_btn = lv_btn_create(container);
+    lv_obj_set_size(scan_btn, 120, 50);
+    lv_obj_t *scan_label = lv_label_create(scan_btn);
+    lv_label_set_text(scan_label, "Escanear");
+    lv_obj_center(scan_label);
+    lv_obj_add_event_cb(scan_btn, scan_button_event_handler, LV_EVENT_CLICKED, NULL);
+
+    // Botón para conectar
+    lv_obj_t *connect_btn = lv_btn_create(container);
+    lv_obj_set_size(connect_btn, 120, 50);
+    lv_obj_t *connect_label = lv_label_create(connect_btn);
+    lv_label_set_text(connect_label, "Conectar");
+    lv_obj_center(connect_label);
+    lv_obj_add_event_cb(connect_btn, connect_button_event_handler, LV_EVENT_CLICKED, password_textarea);
+
+    // Botón para desconectar
+    lv_obj_t *disconnect_btn = lv_btn_create(container);
+    lv_obj_set_size(disconnect_btn, 120, 50);
+    lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
+    lv_label_set_text(disconnect_label, "Desconectar");
+    lv_obj_center(disconnect_label);
+    lv_obj_add_event_cb(disconnect_btn, disconnect_button_event_handler, LV_EVENT_CLICKED, NULL);
+}
+
+
+
+
+
 // -------------------------
 // INTERFAZ DE CONFIGURACIÓN DE PRODUCTOS
 // -------------------------
@@ -432,13 +927,7 @@ static void delete_all_items(lv_event_t *e)
     ESP_LOGI(TAG, "All products deleted");
 }
 
-// Transición para volver a la pantalla principal (se puede ajustar)
-static void transition_to_main_screen(void *param)
-{
-    ESP_LOGI(TAG, "Transitioning to main screen");
-    lv_obj_clean(lv_scr_act());
-    create_general_config_screen();
-}
+
 
 // Botón para salir (guarda y vuelve a la pantalla principal)
 static void save_objects_btn(lv_event_t *e)
@@ -565,58 +1054,6 @@ static void go_to_main_screen_from_config_cb(lv_event_t *e) {
     // Cambia el contenido al main_screen
     switch_screen(create_main_screen);
 }
-// Crea la pantalla principal (con tabview) de la interfaz
-void create_general_config_screen(void)
-{
-    ESP_LOGI(TAG, "Creating general configuration screen");
-    lv_obj_t *tabview = lv_tabview_create(lv_scr_act(), LV_DIR_LEFT, 70);
-    lv_obj_clear_flag(tabview, LV_OBJ_FLAG_SCROLLABLE); // Deshabilita el scroll del tabview
-    lv_obj_clear_flag(lv_tabview_get_content(tabview), LV_OBJ_FLAG_SCROLLABLE);
-//    lv_obj_set_size(tabview, 800, 480);
-    lv_obj_set_style_bg_color(tabview, lv_palette_lighten(LV_PALETTE_BLUE_GREY, 2), 0);
-    // Eliminamos el padding en el contenido para que ocupe todo el espacio
-
-    // Se crean 3 pestañas
-    lv_obj_t *tab1 = lv_tabview_add_tab(tabview, "Tab 1");
-    lv_obj_t *tab2 = lv_tabview_add_tab(tabview, "Config.\n  de\nProductos");
-    lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "Tab 3");
-
-    /* --- TAB 1: Contenedor que ocupa todo el espacio --- */
-    lv_obj_t *container1 = lv_obj_create(tab1);
-    // Opción 1: Ajustar el tamaño al del padre
-    lv_obj_set_size(container1, lv_obj_get_width(tab1), lv_obj_get_height(tab1));
-    // Opción 2 (alternativa): Hacer que el objeto se alinee y rellene todo el espacio
-    lv_obj_set_align(container1, LV_ALIGN_CENTER);
-    lv_obj_set_style_bg_color(container1, lv_color_hex(0xFF0000), 0); // Fondo rojo
-    lv_obj_clear_flag(container1, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *label1 = lv_label_create(container1);
-    lv_label_set_text(label1, "Contenido de Tab 1");
-    lv_obj_center(label1);
-    lv_obj_clear_flag(container1, LV_OBJ_FLAG_SCROLLABLE);
-
-
-    /* --- TAB 2: Configuración de productos --- */
-    
-    product_config_in_tab(tab2);
-
-    /* --- TAB 3: Contenedor que ocupa todo el espacio --- */
-    lv_obj_t *container3 = lv_obj_create(tab3);
-    lv_obj_set_size(container3, lv_obj_get_width(tab3), lv_obj_get_height(tab3));
-    lv_obj_set_align(container3, LV_ALIGN_CENTER);
-    lv_obj_set_style_bg_color(container3, lv_color_hex(0x00FF00), 0); // Fondo verde
-    lv_obj_clear_flag(container3, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *label3 = lv_label_create(container3);
-    lv_label_set_text(label3, "Contenido de Tab 3");
-    lv_obj_center(label3);
-    lv_obj_clear_flag(container3, LV_OBJ_FLAG_SCROLLABLE);
-
-
-    ESP_LOGI(TAG, "General configuration screen created successfully");
-
-
-
-}
-
 
 // Guarda los productos en NVS
 void save_products_to_nvs(void)
@@ -741,7 +1178,7 @@ void create_main_structure(void) {
     // --- Área de Contenido ---
     global_content = lv_obj_create(main_container);
     lv_obj_set_style_pad_all(global_content, 0, 0);
-    lv_obj_set_style_border_width(global_content, 2, 0);
+    lv_obj_set_style_border_width(global_content, 0, 0);
     lv_obj_set_style_border_color(global_content, lv_color_black(), 0);
     lv_obj_set_size(global_content, LV_HOR_RES, LV_VER_RES - 20);
     lv_obj_align(global_content, LV_ALIGN_BOTTOM_MID, 0, 25);
@@ -769,15 +1206,13 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     lv_obj_t *tab2 = lv_tabview_add_tab(tabview, "Config.\nProductos");
     lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "Tab 3");
 
-    /* --- TAB 1: Contenedor que ocupa todo el espacio --- */
+    /* --- TAB 1: UI de Configuración WiFi --- */
     lv_obj_t *container1 = lv_obj_create(tab1);
     lv_obj_set_size(container1, lv_obj_get_width(tab1), lv_obj_get_height(tab1));
     lv_obj_set_align(container1, LV_ALIGN_CENTER);
-    lv_obj_set_style_bg_color(container1, lv_color_hex(0xFF0000), 0); // Fondo rojo
     lv_obj_clear_flag(container1, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *label1 = lv_label_create(container1);
-    lv_label_set_text(label1, "Contenido de Tab 1");
-    lv_obj_center(label1);
+    // Se llama a la función para crear la UI de WiFi dentro de container1
+    create_wifi_settings_widget(container1);
 
     /* --- TAB 2: Configuración de productos --- */
     product_config_in_tab(tab2);
@@ -1031,6 +1466,7 @@ static void product_item_event_cb(lv_event_t * e) {
 void app_main(void)
 {
     init_nvs();
+    wifi_service_init();
     init_uart();
 
     simulated_epoch = load_epoch();
@@ -1053,11 +1489,23 @@ void app_main(void)
         lv_timer_create(update_clock_cb, 1000, NULL);
         lvgl_unlock();
     }*/
-    if(lvgl_lock(-1)) {
+    /*if(lvgl_lock(-1)) {
         lv_obj_clean(lv_scr_act());
         // Crea la estructura principal: header + content
         create_main_structure();
         // Carga la pantalla principal en el área de contenido
+        switch_screen(create_main_screen);
+        // Crea el timer para actualizar el reloj cada segundo
+        lv_timer_create(update_clock_cb, 1000, NULL);
+        lvgl_unlock();
+    }*/
+    if(lvgl_lock(-1)) {
+        lv_obj_clean(lv_scr_act());
+        // Crea la estructura principal: header + content
+        create_main_structure();
+        
+        
+        // Carga la pantalla principal (o la que prefieras)
         switch_screen(create_main_screen);
         // Crea el timer para actualizar el reloj cada segundo
         lv_timer_create(update_clock_cb, 1000, NULL);
