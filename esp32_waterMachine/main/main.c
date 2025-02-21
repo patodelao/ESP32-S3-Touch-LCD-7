@@ -113,7 +113,11 @@ static lv_obj_t *ssdropdown;
 static TaskHandle_t wifi_task_handle = NULL;
 static wifi_ap_record_t top_networks[MAX_NETWORKS];
 
+static bool wifi_manual_disconnect = true;
+static bool sntp_initialized = false;
 
+static char new_dropdown_options[256] = "";
+static volatile bool update_dropdown_flag = false;
 
 
 // Variables para la configuración de productos
@@ -168,32 +172,41 @@ void switch_screen(void (*create_screen)(lv_obj_t *parent));
 
 #define MAX_RETRIES 5
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base,int32_t event_id, void* event_data){
+static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data){
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
+        ESP_LOGI(TAG, "Wi‑Fi iniciado. Esperando acción del usuario para conectar.");
+        // Se elimina la llamada a esp_wifi_connect() para evitar el escaneo automático.
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < MAX_RETRIES) {
-            esp_wifi_connect();
-            s_retry_num++;
-            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-            ESP_LOGI(TAG, "Reintentando conexión al AP");
+        if (wifi_manual_disconnect) {
+            ESP_LOGI(TAG, "Desconexión manual, no se reconecta.");
+            wifi_manual_disconnect = false;
         } else {
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            if (s_retry_num < MAX_RETRIES) {
+                esp_wifi_connect();
+                s_retry_num++;
+                xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+                ESP_LOGI(TAG, "Reintentando conexión al AP");
+            } else {
+                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            }
+            ESP_LOGI(TAG, "Falló la conexión al AP");
         }
-        ESP_LOGI(TAG, "Falló la conexión al AP");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Obtuvo IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
 
-        // Inicializa SNTP para sincronizar la hora vía NTP
-        ESP_LOGI(TAG, "Iniciando SNTP");
-        sntp_setoperatingmode(SNTP_OPMODE_POLL);
-        sntp_setservername(0, "pool.ntp.org");
-        sntp_init();
+        if (!sntp_initialized) {
+            ESP_LOGI(TAG, "Iniciando SNTP");
+            sntp_setoperatingmode(SNTP_OPMODE_POLL);
+            sntp_setservername(0, "pool.ntp.org");
+            sntp_init();
+            sntp_initialized = true;
+        }
     }
 }
+
 
 // Tarea para manejar la conexiÃ³n Wi-Fi
 static void wifi_connect_task(void *param) {
@@ -220,6 +233,25 @@ static void wifi_connect_task(void *param) {
     // Terminar la tarea
     vTaskDelete(NULL);
 }
+/*
+static void update_dropdown_options(void *param) {
+    char *options = (char *)param;
+    lv_dropdown_set_options(ssdropdown, options);
+    free(options); // Se libera la memoria aquí, en el callback
+}
+*/
+
+
+static void update_dropdown_options(void *param) {
+    char *options = (char *)param;
+    // Verificar que ssdropdown sea válido antes de actualizar
+    if (ssdropdown != NULL && lv_obj_is_valid(ssdropdown)) {
+        lv_dropdown_set_options(ssdropdown, options);
+    }
+    free(options); // Se libera la memoria aquí, en el callback
+}
+
+
 
 
 
@@ -227,8 +259,6 @@ static void wifi_scan_task(void *param) {
     ESP_LOGI(TAG, "Iniciando escaneo Wi-Fi...");
 
     uint16_t ap_count = 0;
-    
-    // Asigna memoria para almacenar los registros de los AP detectados
     wifi_ap_record_t *ap_info = malloc(DEFAULT_SCAN_LIST_SIZE * sizeof(wifi_ap_record_t));
     if (ap_info == NULL) {
         ESP_LOGE(TAG, "No se pudo asignar memoria para ap_info");
@@ -236,32 +266,33 @@ static void wifi_scan_task(void *param) {
         return;
     }
 
-    // Configuración del escaneo Wi-Fi
     wifi_scan_config_t scan_config = {
         .ssid = NULL,
         .bssid = NULL,
         .channel = 0,
         .show_hidden = true,
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
-        .scan_time.active.min = 50, // Tiempo mínimo por canal (ms)
-        .scan_time.active.max = 500, // Tiempo máximo total (1s)
+        .scan_time.active.min = 50,
+        .scan_time.active.max = 500,
     };
 
-    // Iniciar el escaneo
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, false));
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo para el escaneo
+    esp_err_t err = esp_wifi_scan_start(&scan_config, false);
+    if (err == ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGI(TAG, "Wi‑Fi no iniciado, iniciándolo...");
+        ESP_ERROR_CHECK(esp_wifi_start());
+        err = esp_wifi_scan_start(&scan_config, false);
+    }
+    ESP_ERROR_CHECK(err);
 
-    // Cancelar escaneo si está activo
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Espera 1 segundo
+
     esp_wifi_scan_stop();
-
-    // Obtener registros
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
     ESP_LOGI(TAG, "Total de redes detectadas: %u", ap_count);
 
     uint16_t num_to_fetch = ap_count < DEFAULT_SCAN_LIST_SIZE ? ap_count : DEFAULT_SCAN_LIST_SIZE;
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&num_to_fetch, ap_info));
 
-    // Guardar SSID en el arreglo `top_networks`
     memset(top_networks, 0, sizeof(top_networks));
     for (int i = 0; i < num_to_fetch; i++) {
         top_networks[i] = ap_info[i];
@@ -269,16 +300,22 @@ static void wifi_scan_task(void *param) {
     }
     free(ap_info);
 
-    // Actualizar el dropdown en la siguiente actualización de pantalla
-    if (lvgl_lock(-1)) {
-        char dropdown_options[256] = {0};
+    // Construir la cadena con los SSID detectados
+    char *dropdown_options = malloc(256);
+    if (dropdown_options) {
+        dropdown_options[0] = '\0';
         for (int i = 0; i < num_to_fetch; i++) {
-            strcat(dropdown_options, (char *)top_networks[i].ssid);
-            if (i < num_to_fetch - 1) strcat(dropdown_options, "\n");
+            strcat(dropdown_options, (const char *)top_networks[i].ssid);
+            if (i < num_to_fetch - 1) {
+                strcat(dropdown_options, "\n");
+            }
         }
-        lv_dropdown_set_options(ssdropdown, dropdown_options);
-        lvgl_unlock();
+        // Agenda el callback para actualizar el dropdown en el contexto seguro de LVGL.
+        lv_async_call(update_dropdown_options, dropdown_options);
+        // No se llama a free(dropdown_options) aquí.
     }
+
+
 
     ESP_LOGI(TAG, "Escaneo completado.");
     wifi_task_handle = NULL; // Resetear el handle de la tarea
@@ -300,7 +337,7 @@ static void remove_floating_msgbox(lv_event_t *event) {
 static void scan_button_event_handler(lv_event_t *event) {
     if (wifi_task_handle == NULL) { // Verificar que no haya un escaneo en curso
         ESP_LOGI(TAG, "Creando tarea de escaneo en Core 0...");
-        xTaskCreatePinnedToCore(wifi_scan_task, "wifi_scan_task", 4096, NULL, 5, &wifi_task_handle, 0);
+        xTaskCreatePinnedToCore(wifi_scan_task, "wifi_scan_task", 8192, NULL, 5, &wifi_task_handle, 0);
     } else {
         ESP_LOGW(TAG, "Escaneo ya en curso...");
     }
@@ -336,11 +373,10 @@ static void connect_button_event_handler(lv_event_t *event) {
 
     ESP_LOGI(TAG, "Intentando conectar a SSID: %s con contraseÃ±a: %s", selected_ssid, password);
 
-    // Mostrar mensaje flotante de conexiÃ³n en proceso
-    if (lvgl_lock(-1)) {
-        floating_msgbox = lv_msgbox_create(NULL, "ConexiÃ³n en proceso", "Conectando a la red...", NULL, true);
-        lv_obj_center(floating_msgbox);
-        lvgl_unlock();
+    // if sta is conencceted, disconnect
+    if (wifi_task_handle != NULL) {
+        vTaskDelete(wifi_task_handle);
+        wifi_task_handle = NULL;
     }
 
     // Configura la red Wi-Fi
@@ -376,9 +412,10 @@ static void connect_button_event_handler(lv_event_t *event) {
 }
 
 static void disconnect_button_event_handler(lv_event_t *event) {
+    wifi_manual_disconnect = true;  // Indica que la desconexión fue solicitada manualmente
     esp_err_t err = esp_wifi_disconnect();
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "DesconexiÃ³n exitosa.");
+        ESP_LOGI(TAG, "Desconexión exitosa.");
         if (lvgl_lock(-1)) {
             lv_obj_t *msgbox = lv_msgbox_create(NULL, "Desconectado", "Se ha desconectado de la red Wi-Fi.", NULL, true);
             lv_obj_center(msgbox);
@@ -393,6 +430,7 @@ static void disconnect_button_event_handler(lv_event_t *event) {
         }
     }
 }
+
 
 static lv_obj_t *keyboard;
 
@@ -679,7 +717,6 @@ void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_d
 // INTERFAZ DE CONFIGURACIÓN DE WIFI
 // -------------------------
 
-static bool wifi_manual_disconnect = false;
 
 // Variable global para controlar la inicialización del servicio Wi‑Fi
 
@@ -761,6 +798,7 @@ void wifi_init_sta(const char *ssid, const char *password) {
     }
     // No se limpian los handlers ni se elimina el event group, de modo que el driver sigue activo.
 }
+
 
 
 static void connect_event_handler(lv_event_t *event) {
@@ -1468,6 +1506,7 @@ void app_main(void)
         lv_timer_create(update_clock_cb, 1000, NULL);
         lvgl_unlock();
     }*/
+
     if(lvgl_lock(-1)) {
         lv_obj_clean(lv_scr_act());
         // Crea la estructura principal: header + content
@@ -1476,8 +1515,12 @@ void app_main(void)
         
         // Carga la pantalla principal (o la que prefieras)
         switch_screen(create_main_screen);
-        // Crea el timer para actualizar el reloj cada segundo
-        lv_timer_create(update_clock_cb, 1000, NULL);
+
+        lv_timer_create(update_clock_cb, 1000, NULL); // Crea el timer para actualizar el reloj cada segundo
+
+        
+        //lv_timer_create(dropdown_update_timer_cb, 200, NULL); // Crea un timer para actualizar el dropdown
+
         lvgl_unlock();
     }
 }
