@@ -102,6 +102,7 @@ static time_t simulated_epoch = 1739984400;    // 2025-12-31 23:00:00
 #define MAX_NETWORKS 5
 #define DEFAULT_SCAN_LIST_SIZE 10
 
+static lv_obj_t *wifi_status_icon = NULL;
 
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
@@ -172,11 +173,22 @@ void switch_screen(void (*create_screen)(lv_obj_t *parent));
 
 #define MAX_RETRIES 5
 
+static void set_wifi_icon_connected(void *arg) {
+    lv_label_set_text(wifi_status_icon, LV_SYMBOL_WIFI);
+}
+
+static void set_wifi_icon_disconnected(void *arg) {
+    lv_label_set_text(wifi_status_icon, LV_SYMBOL_CLOSE);
+}
+
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data){
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         ESP_LOGI(TAG, "Wi‑Fi iniciado. Esperando acción del usuario para conectar.");
         // Se elimina la llamada a esp_wifi_connect() para evitar el escaneo automático.
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        // Actualizar icono a "desconectado"
+        lv_async_call(set_wifi_icon_disconnected, NULL);
         if (wifi_manual_disconnect) {
             ESP_LOGI(TAG, "DESCONECTADO");
             wifi_manual_disconnect = false;
@@ -196,6 +208,9 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "Obtuvo IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
+        // Actualizar icono a "conectado"
+        lv_async_call(set_wifi_icon_connected, NULL);
 
         if (!sntp_initialized) {
             ESP_LOGI(TAG, "Iniciando SNTP");
@@ -846,7 +861,7 @@ void create_wifi_settings_widget(lv_obj_t *parent) {
 
     
     // Asignamos un string de prueba para que aparezca ya escrito
-    lv_textarea_set_text(password_textarea, "7KCP3FPFNKc3RNWY4MVV");
+    //lv_textarea_set_text(password_textarea, "7KCP3FPFNKc3RNWY4MVV");
 
     // Botón para escanear redes WiFi
     lv_obj_t *scan_btn = lv_btn_create(container);
@@ -1058,6 +1073,7 @@ static void product_config_in_tab(lv_obj_t *parent)
     lv_obj_set_size(save_btn, 40, 40);
     lv_obj_align(save_btn, LV_ALIGN_CENTER, 0, 0);
     lv_obj_t *btn_label = lv_label_create(save_btn);
+    lv_obj_align(btn_label, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(btn_label, LV_SYMBOL_SAVE);
     lv_obj_add_event_cb(save_btn, save_objects_btn, LV_EVENT_CLICKED, NULL);
     ESP_LOGI(TAG, "Product configuration UI created successfully");
@@ -1170,6 +1186,7 @@ void switch_screen(void (*create_screen)(lv_obj_t *parent)) {
 }
 
 
+
 void create_main_structure(void) {
     // Crea un contenedor principal que ocupa toda la pantalla
     lv_obj_t *main_container = lv_obj_create(lv_scr_act());
@@ -1181,13 +1198,24 @@ void create_main_structure(void) {
     lv_obj_set_size(global_header, LV_HOR_RES, 30);  // Ajusta la altura según necesites
     lv_obj_align(global_header, LV_ALIGN_TOP_MID, 0, -28);
     lv_obj_set_style_bg_color(global_header, lv_color_hex3(0x333), 0);
-    lv_obj_set_style_pad_all(global_header, 5, 0);
+    lv_obj_set_style_pad_all(global_header, 0, 0);
 
-    // Crea el label para el reloj y lo guarda globalmente
+    //label para el reloj y lo guarda globalmente
     global_clock_label = lv_label_create(global_header);
     lv_label_set_text(global_clock_label, "00:00");  // Valor inicial (se actualizará luego)+
     lv_obj_set_style_text_color(global_clock_label, lv_color_white(), 0);
     lv_obj_align(global_clock_label, LV_ALIGN_CENTER, 0, 0);
+
+    // Label del icono de Wi‑Fi (lado derecho)
+    // Inicialmente muestra LV_SYMBOL_CLOSE (desconectado)
+    wifi_status_icon = lv_label_create(global_header);
+    lv_label_set_text(wifi_status_icon, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_color(wifi_status_icon, lv_color_white(), 0);
+    lv_obj_align(wifi_status_icon, LV_ALIGN_RIGHT_MID, 0, 0);
+
+
+
+
 
     // --- Área de Contenido ---
     global_content = lv_obj_create(main_container);
@@ -1216,8 +1244,8 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(tabview, lv_palette_lighten(LV_PALETTE_BLUE_GREY, 2), 0);
 
     // Se crean 3 pestañas
-    lv_obj_t *tab1 = lv_tabview_add_tab(tabview, "Tab 1");
-    lv_obj_t *tab2 = lv_tabview_add_tab(tabview, "Config.\nProductos");
+    lv_obj_t *tab1 = lv_tabview_add_tab(tabview,"   " LV_SYMBOL_WIFI "\nConfig.\nWiFi");
+    lv_obj_t *tab2 = lv_tabview_add_tab(tabview,"    " LV_SYMBOL_LIST "\nConfig.\nProducts");
     lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "Tab 3");
 
     /* --- TAB 1: UI de Configuración WiFi --- */
