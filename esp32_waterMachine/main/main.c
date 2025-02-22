@@ -178,7 +178,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         // Se elimina la llamada a esp_wifi_connect() para evitar el escaneo automático.
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (wifi_manual_disconnect) {
-            ESP_LOGI(TAG, "Desconexión manual, no se reconecta.");
+            ESP_LOGI(TAG, "DESCONECTADO");
             wifi_manual_disconnect = false;
         } else {
             if (s_retry_num < MAX_RETRIES) {
@@ -760,6 +760,8 @@ void wifi_service_init(void) {
     ESP_LOGI(TAG, "Servicio Wi‑Fi inicializado.");
 }
 
+
+
 void wifi_init_sta(const char *ssid, const char *password) {
     // Asegura que el servicio Wi‑Fi esté iniciado
     if (!wifi_initialized) {
@@ -789,16 +791,17 @@ void wifi_init_sta(const char *ssid, const char *password) {
 
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "Connected to Wi‑Fi SSID:%s", ssid);
-        lv_label_set_text(status_label, "Conectado a Wi‑Fi");
+        if (lvgl_lock(-1)) {
+            success_msgbox = lv_msgbox_create(NULL, "Conexión Exitosa", "Conexión establecida correctamente.", NULL, true);
+            lv_obj_center(success_msgbox);
+            lvgl_unlock();
+        }
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s", ssid);
-        lv_label_set_text(status_label, "Error al conectar");
     } else {
         ESP_LOGE(TAG, "Unexpected event");
     }
-    // No se limpian los handlers ni se elimina el event group, de modo que el driver sigue activo.
 }
-
 
 
 static void connect_event_handler(lv_event_t *event) {
@@ -840,6 +843,10 @@ void create_wifi_settings_widget(lv_obj_t *parent) {
     lv_textarea_set_placeholder_text(password_textarea, "Ingrese contraseña");
     lv_obj_set_width(password_textarea, 200);
     lv_obj_add_event_cb(password_textarea, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+
+    
+    // Asignamos un string de prueba para que aparezca ya escrito
+    lv_textarea_set_text(password_textarea, "7KCP3FPFNKc3RNWY4MVV");
 
     // Botón para escanear redes WiFi
     lv_obj_t *scan_btn = lv_btn_create(container);
@@ -1317,12 +1324,12 @@ void create_main_screen(lv_obj_t *parent) {
     
     // --- Botón de Configuración ---
     lv_obj_t *btn_config = lv_btn_create(parent);
-    lv_obj_set_size(btn_config, 200, 50);
+    lv_obj_set_size(btn_config, 40, 40);
     lv_obj_align(btn_config, LV_ALIGN_BOTTOM_MID, 0, -20);
     // Usa el callback que ya tienes para ir a la pantalla de configuración
     lv_obj_add_event_cb(btn_config, btn_to_config_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_config = lv_label_create(btn_config);
-    lv_label_set_text(label_config, "Configurar Productos");
+    lv_label_set_text(label_config, LV_SYMBOL_SETTINGS); // "Configurar Productos"
     lv_obj_center(label_config);
 }
 
@@ -1367,18 +1374,32 @@ time_t load_epoch(void) {
 
 
 static void update_clock_cb(lv_timer_t * timer) {
-    // Incrementa el epoch en 1 cada segundo
-    simulated_epoch++;
+    time_t now;
+    // Si SNTP está inicializado y sincronizado, se usa la hora real
+    if (sntp_initialized && sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+        ESP_LOGI(TAG, "SNTP sincronizado");
+         time(&now);
+         simulated_epoch = now;  // Sincronizamos el epoch simulado
+    } else {
+         // Si no se tiene sincronización, se incrementa manualmente el epoch
+         simulated_epoch++;
+         now = simulated_epoch;
+    }
     
     struct tm timeinfo;
-    localtime_r(&simulated_epoch, &timeinfo);  // Convierte el epoch a hora local
-    char time_str[9];  // "HH:MM:SS" necesita 8 caracteres + 1 para el nulo
-    // Formatea la hora en formato HH:MM:SS
-    strftime(time_str, sizeof(time_str), "%H:%M:%S", &timeinfo);
+    localtime_r(&now, &timeinfo);
+    char datetime_str[20];  // Asegúrate de que el buffer es lo suficientemente grande
+    strftime(datetime_str, sizeof(datetime_str), "%d/%m/%Y %H:%M:%S", &timeinfo);
     
-    lv_label_set_text(global_clock_label, time_str);
+    // Actualiza el label del header con la hora formateada
+    lv_label_set_text(global_clock_label, datetime_str);
+    
+    // Guarda el epoch actualizado en NVS para persistirlo
     save_epoch(simulated_epoch);
 }
+
+
+
 
 
 
@@ -1473,6 +1494,10 @@ static void product_item_event_cb(lv_event_t * e) {
 void app_main(void)
 {
     init_nvs();
+    // Configura la zona horaria para Chile
+    setenv("TZ", "CLT3CLST,m10.1.0/0,m3.1.0/0", 1);
+    tzset();
+
     wifi_service_init();
     init_uart();
 
