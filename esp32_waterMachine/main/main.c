@@ -95,14 +95,18 @@ static lv_obj_t *global_content = NULL;        // Contenedor donde se inyectan l
 static lv_obj_t *global_clock_label = NULL;    // Label que muestra la hora en el header
 
 static time_t simulated_epoch = 1739984400;    // 2025-12-31 23:00:00
-
+#define CONFIG_PASSWORD "root"              // Contraseña para acceder a la configuración general
 // -------------------------
 // VARIABLES PARA LA CONEXIÓN WIFI
 // -------------------------
 #define MAX_NETWORKS 5
 #define DEFAULT_SCAN_LIST_SIZE 10
 
+
+
 static lv_obj_t *wifi_status_icon = NULL;
+static lv_obj_t *floating_msgbox = NULL;
+static lv_obj_t *success_msgbox = NULL;
 
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
@@ -208,10 +212,17 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "Obtuvo IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-
+    
+        // Mostrar mensaje de conexión exitosa solo cuando se obtiene la IP (****)
+        if (lvgl_lock(-1)) {
+            success_msgbox = lv_msgbox_create(NULL, "Conexión Exitosa", "Conexión establecida correctamente.", NULL, true);
+            lv_obj_center(success_msgbox);
+            lvgl_unlock();
+        }
         // Actualizar icono a "conectado"
         lv_async_call(set_wifi_icon_connected, NULL);
 
+        // Iniciar SNTP si es necesario
         if (!sntp_initialized) {
             ESP_LOGI(TAG, "Iniciando SNTP");
             sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -220,6 +231,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
             sntp_initialized = true;
         }
     }
+    
 }
 
 
@@ -299,7 +311,7 @@ static void wifi_scan_task(void *param) {
     }
     ESP_ERROR_CHECK(err);
 
-    vTaskDelay(pdMS_TO_TICKS(1000)); // Espera 1 segundo
+    vTaskDelay(pdMS_TO_TICKS(500)); // Espera 0.5 segundo
 
     esp_wifi_scan_stop();
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
@@ -338,8 +350,7 @@ static void wifi_scan_task(void *param) {
 }
 
 
-static lv_obj_t *floating_msgbox = NULL;
-static lv_obj_t *success_msgbox = NULL;
+
 
 // FunciÃ³n para eliminar el mensaje flotante
 static void remove_floating_msgbox(lv_event_t *event) {
@@ -406,14 +417,9 @@ static void connect_button_event_handler(lv_event_t *event) {
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
     if (err == ESP_OK) {
         err = esp_wifi_connect();
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "ConexiÃ³n exitosa.");
-            if (lvgl_lock(-1)) {
-                success_msgbox = lv_msgbox_create(NULL, "ConexiÃ³n Exitosa", "ConexiÃ³n establecida correctamente.", NULL, true);
-                lv_obj_align(success_msgbox, LV_ALIGN_CENTER, 0, -50); // Ubicar encima del mensaje "ConexiÃ³n en proceso"
-                lvgl_unlock();
-            }
-        }
+        /*if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Wifi_set_config OK");
+            }*/
     }
 
     if (err != ESP_OK) {
@@ -430,12 +436,12 @@ static void disconnect_button_event_handler(lv_event_t *event) {
     wifi_manual_disconnect = true;  // Indica que la desconexión fue solicitada manualmente
     esp_err_t err = esp_wifi_disconnect();
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Desconexión exitosa.");
-        if (lvgl_lock(-1)) {
+        //ESP_LOGI(TAG, "Desconexión exitosa.");
+        /*if (lvgl_lock(-1)) {
             lv_obj_t *msgbox = lv_msgbox_create(NULL, "Desconectado", "Se ha desconectado de la red Wi-Fi.", NULL, true);
             lv_obj_center(msgbox);
             lvgl_unlock();
-        }
+        }*/
     } else {
         ESP_LOGE(TAG, "Error al desconectar: %s", esp_err_to_name(err));
         if (lvgl_lock(-1)) {
@@ -486,6 +492,88 @@ static void textarea_event_handler(lv_event_t *event) {
         lv_obj_set_style_opa(keyboard, LV_OPA_COVER, LV_PART_MAIN); // Mostrarlo con opacidad completa
     }
 }
+
+
+
+
+///////////////////////// Configuracion de password config /////////////////////////
+
+// Callback para el botón de confirmación en el diálogo de contraseña
+static void confirm_password_event_cb(lv_event_t *e) {
+    // El parámetro "user_data" es nuestro diálogo
+    lv_obj_t *dialog = lv_event_get_user_data(e);
+    
+    // Asumimos que el cuadro de diálogo tiene dos hijos:
+    // 1) Un label con el título y
+    // 2) Un textarea para ingresar la contraseña.
+    // Obtenemos el textarea (suponiendo que es el segundo hijo).
+    lv_obj_t *password_ta = lv_obj_get_child(dialog, 1);
+    const char *entered_pass = lv_textarea_get_text(password_ta);
+    
+    if (strcmp(entered_pass, CONFIG_PASSWORD) == 0) {
+        // Contraseña correcta: se elimina el diálogo y se cambia a la pantalla de configuración general.
+        lv_obj_del(dialog);
+        switch_screen(create_general_config_screen_in_content);
+    } else {
+        // Contraseña incorrecta: muestra un mensaje de error.
+        lv_obj_t *error_msg = lv_msgbox_create(NULL, "Error", "Contraseña incorrecta.", NULL, true);
+        lv_obj_center(error_msg);
+    }
+}
+
+// Función para mostrar el diálogo de contraseña
+static void show_config_password_dialog(void) {
+    // Crea un contenedor modal para el diálogo
+    lv_obj_t *dialog = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(dialog, 300, 200);
+    lv_obj_center(dialog);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(dialog, 2, 0);
+
+    // Título del diálogo
+    lv_obj_t *title = lv_label_create(dialog);
+    lv_label_set_text(title, "Ingrese contraseña:");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+    // Campo de texto para la contraseña
+    lv_obj_t *password_ta = lv_textarea_create(dialog);
+    lv_textarea_set_placeholder_text(password_ta, "Contraseña");
+    lv_textarea_set_one_line(password_ta, true);
+    lv_textarea_set_password_mode(password_ta, true);
+    lv_obj_set_width(password_ta, 250);
+    lv_obj_align(password_ta, LV_ALIGN_CENTER, 0, -10);
+    // Se asocia el manejador de teclado (ya definido en tu código)
+    lv_obj_add_event_cb(password_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+
+    // Botón de confirmación
+    lv_obj_t *btn_confirm = lv_btn_create(dialog);
+    lv_obj_set_size(btn_confirm, 100, 40);
+    lv_obj_align(btn_confirm, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_t *btn_label = lv_label_create(btn_confirm);
+    lv_label_set_text(btn_label, "Confirmar");
+    lv_obj_center(btn_label);
+    // Al hacer clic se llama al callback que valida la contraseña,
+    // pasando como "user_data" el cuadro de diálogo para poder eliminarlo si es correcto.
+    lv_obj_add_event_cb(btn_confirm, confirm_password_event_cb, LV_EVENT_CLICKED, dialog);
+}
+
+// Modifica el callback del botón de configuración general para que abra el diálogo de contraseña
+static void btn_to_config_event_cb(lv_event_t *e) {
+    show_config_password_dialog();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -804,18 +892,6 @@ void wifi_init_sta(const char *ssid, const char *password) {
                                            pdFALSE,
                                            pdMS_TO_TICKS(10000));
 
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected to Wi‑Fi SSID:%s", ssid);
-        if (lvgl_lock(-1)) {
-            success_msgbox = lv_msgbox_create(NULL, "Conexión Exitosa", "Conexión establecida correctamente.", NULL, true);
-            lv_obj_center(success_msgbox);
-            lvgl_unlock();
-        }
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s", ssid);
-    } else {
-        ESP_LOGE(TAG, "Unexpected event");
-    }
 }
 
 
@@ -839,6 +915,7 @@ void create_wifi_settings_widget(lv_obj_t *parent) {
     
     // Contenedor principal para la UI de WiFi
     lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(container, 300, 400);
     lv_obj_center(container);
     lv_obj_set_style_bg_color(container, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
@@ -860,8 +937,8 @@ void create_wifi_settings_widget(lv_obj_t *parent) {
     lv_obj_add_event_cb(password_textarea, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
 
     
-    // Asignamos un string de prueba para que aparezca ya escrito
-    //lv_textarea_set_text(password_textarea, "7KCP3FPFNKc3RNWY4MVV");
+    // Asignamos un string de prueba  de wifi_password para que aparezca ya escrito
+    lv_textarea_set_text(password_textarea, "111111111111111");
 
     // Botón para escanear redes WiFi
     lv_obj_t *scan_btn = lv_btn_create(container);
@@ -1227,9 +1304,9 @@ void create_main_structure(void) {
     lv_obj_clear_flag(global_content, LV_OBJ_FLAG_SCROLLABLE);
 }
 
-static void btn_to_config_event_cb(lv_event_t *e) {
-    switch_screen(create_general_config_screen_in_content);
-}
+//static void btn_to_config_event_cb(lv_event_t *e) {
+  //  switch_screen(create_general_config_screen_in_content);
+//}
 
 
 
