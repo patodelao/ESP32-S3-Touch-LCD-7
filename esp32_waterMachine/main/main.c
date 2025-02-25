@@ -95,6 +95,8 @@ static lv_obj_t *global_content = NULL;        // Contenedor donde se inyectan l
 static lv_obj_t *global_clock_label = NULL;    // Label que muestra la hora en el header
 
 static time_t simulated_epoch = 1739984400;    // 2025-12-31 23:00:00
+
+static lv_obj_t *pwd_change_dialog = NULL;     // Diálogo para cambiar la contraseña
 #define CONFIG_PASSWORD "root"              // Contraseña para acceder a la configuración general
 // -------------------------
 // VARIABLES PARA LA CONEXIÓN WIFI
@@ -917,8 +919,11 @@ static lv_obj_t *create_textarea(lv_obj_t *parent, const char *placeholder)
     lv_obj_t *ta = lv_textarea_create(parent);
     lv_textarea_set_placeholder_text(ta, placeholder);
     lv_textarea_set_one_line(ta, true);
+    // Registra el callback para que al recibir foco se muestre el teclado
+    lv_obj_add_event_cb(ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
     return ta;
 }
+
 
 // Guarda el nombre modificado desde la subpágina
 static void save_button_event_cb(lv_event_t *e)
@@ -991,14 +996,26 @@ static void create_new_product(lv_event_t *e)
     }
     lv_obj_t *new_sub_page = lv_menu_page_create(menu, NULL);
     ESP_LOGI(TAG, "New sub-page created for product %lu", cont_index + 1);
+    
+    // Crea el campo "Nombre" y le agrega el evento para mostrar el teclado
     lv_obj_t *name_ta = create_textarea(new_sub_page, "Nombre");
+    lv_obj_add_event_cb(name_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+    
+    // Crea el campo "Precio"
     lv_obj_t *price_ta = create_textarea(new_sub_page, "Precio");
+    lv_obj_add_event_cb(price_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+    
+    // Crea el campo "Descripción"
     lv_obj_t *desc_ta = create_textarea(new_sub_page, "Descripción");
+    lv_obj_add_event_cb(desc_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+    
+    // Crea el botón de guardar
     lv_obj_t *save_btn = lv_btn_create(new_sub_page);
     lv_obj_t *label = lv_label_create(save_btn);
     lv_label_set_text(label, "Guardar");
     lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, new_sub_page);
     ESP_LOGI(TAG, "Save button created for new product");
+    
     lv_obj_t *cont = lv_menu_cont_create(main_page);
     lv_obj_t *cont_label = lv_label_create(cont);
     static char default_name[20];
@@ -1505,7 +1522,7 @@ static void create_password_change_menu(lv_obj_t *parent) {
     
     // Agrega el título (índice 0)
     lv_obj_t *title = lv_label_create(container);
-    lv_label_set_text(title, "Cambiar Contraseña");
+    lv_label_set_text(title, "Cambiar Clave de Configuración");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
     
     // Agrega el textarea para la contraseña actual (índice 1)
@@ -1597,7 +1614,7 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     // Se crean 3 pestañas
     lv_obj_t *tab1 = lv_tabview_add_tab(tabview,"   " LV_SYMBOL_WIFI "\nConfig.\nWiFi");
     lv_obj_t *tab2 = lv_tabview_add_tab(tabview,"    " LV_SYMBOL_LIST "\nConfig.\nProducts");
-    lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "****\nCambiar\nContraseña");
+    lv_obj_t *tab3 = lv_tabview_add_tab(tabview,"    ****\nCambiar\nClave\nadmin.");
 
     /* --- TAB 1: UI de Configuración WiFi --- */
     lv_obj_t *container1 = lv_obj_create(tab1);
