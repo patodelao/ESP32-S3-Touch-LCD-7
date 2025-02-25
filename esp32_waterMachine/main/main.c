@@ -171,6 +171,11 @@ void create_main_screen(lv_obj_t *parent);
 void switch_screen(void (*create_screen)(lv_obj_t *parent));
 
 // -------------------------
+// DECLARACIONES DE FUNCIONES USADAS
+// -------------------------
+static bool load_config_password_from_nvs(char *buffer, size_t size);
+
+// -------------------------
 // IMPLEMENTACIONES
 // -------------------------
 
@@ -458,6 +463,8 @@ static lv_obj_t *keyboard;
 static void keyboard_event_handler(lv_event_t *event) {
     lv_event_code_t code = lv_event_get_code(event);
     lv_obj_t *keyboard = lv_event_get_target(event);
+    lv_obj_move_foreground(keyboard);
+    
 
     if (code == LV_EVENT_CANCEL || code == LV_EVENT_READY) {
         lv_obj_t *textarea = lv_keyboard_get_textarea(keyboard);
@@ -492,76 +499,6 @@ static void textarea_event_handler(lv_event_t *event) {
         lv_obj_set_style_opa(keyboard, LV_OPA_COVER, LV_PART_MAIN); // Mostrarlo con opacidad completa
     }
 }
-
-
-
-
-///////////////////////// Configuracion de password config /////////////////////////
-
-// Callback para el botón de confirmación en el diálogo de contraseña
-static void confirm_password_event_cb(lv_event_t *e) {
-    // El parámetro "user_data" es nuestro diálogo
-    lv_obj_t *dialog = lv_event_get_user_data(e);
-    
-    // Asumimos que el cuadro de diálogo tiene dos hijos:
-    // 1) Un label con el título y
-    // 2) Un textarea para ingresar la contraseña.
-    // Obtenemos el textarea (suponiendo que es el segundo hijo).
-    lv_obj_t *password_ta = lv_obj_get_child(dialog, 1);
-    const char *entered_pass = lv_textarea_get_text(password_ta);
-    
-    if (strcmp(entered_pass, CONFIG_PASSWORD) == 0) {
-        // Contraseña correcta: se elimina el diálogo y se cambia a la pantalla de configuración general.
-        lv_obj_del(dialog);
-        switch_screen(create_general_config_screen_in_content);
-    } else {
-        // Contraseña incorrecta: muestra un mensaje de error.
-        lv_obj_t *error_msg = lv_msgbox_create(NULL, "Error", "Contraseña incorrecta.", NULL, true);
-        lv_obj_center(error_msg);
-    }
-}
-
-// Función para mostrar el diálogo de contraseña
-static void show_config_password_dialog(void) {
-    // Crea un contenedor modal para el diálogo
-    lv_obj_t *dialog = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(dialog, 300, 200);
-    lv_obj_center(dialog);
-    lv_obj_set_style_bg_color(dialog, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_border_width(dialog, 2, 0);
-
-    // Título del diálogo
-    lv_obj_t *title = lv_label_create(dialog);
-    lv_label_set_text(title, "Ingrese contraseña:");
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-
-    // Campo de texto para la contraseña
-    lv_obj_t *password_ta = lv_textarea_create(dialog);
-    lv_textarea_set_placeholder_text(password_ta, "Contraseña");
-    lv_textarea_set_one_line(password_ta, true);
-    lv_textarea_set_password_mode(password_ta, true);
-    lv_obj_set_width(password_ta, 250);
-    lv_obj_align(password_ta, LV_ALIGN_CENTER, 0, -10);
-    // Se asocia el manejador de teclado (ya definido en tu código)
-    lv_obj_add_event_cb(password_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
-
-    // Botón de confirmación
-    lv_obj_t *btn_confirm = lv_btn_create(dialog);
-    lv_obj_set_size(btn_confirm, 100, 40);
-    lv_obj_align(btn_confirm, LV_ALIGN_BOTTOM_MID, 0, -10);
-    lv_obj_t *btn_label = lv_label_create(btn_confirm);
-    lv_label_set_text(btn_label, "Confirmar");
-    lv_obj_center(btn_label);
-    // Al hacer clic se llama al callback que valida la contraseña,
-    // pasando como "user_data" el cuadro de diálogo para poder eliminarlo si es correcto.
-    lv_obj_add_event_cb(btn_confirm, confirm_password_event_cb, LV_EVENT_CLICKED, dialog);
-}
-
-// Modifica el callback del botón de configuración general para que abra el diálogo de contraseña
-static void btn_to_config_event_cb(lv_event_t *e) {
-    show_config_password_dialog();
-}
-
 
 
 
@@ -1304,9 +1241,346 @@ void create_main_structure(void) {
     lv_obj_clear_flag(global_content, LV_OBJ_FLAG_SCROLLABLE);
 }
 
-//static void btn_to_config_event_cb(lv_event_t *e) {
-  //  switch_screen(create_general_config_screen_in_content);
-//}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///////////////////////// Configuracion de password config /////////////////////////
+
+// Callback para el botón de confirmación en el diálogo de contraseña, usando NVS.
+static void confirm_password_event_cb(lv_event_t *e) {
+    // "user_data" es nuestro diálogo
+    lv_obj_t *dialog = lv_event_get_user_data(e);
+    if (!lv_obj_is_valid(dialog)) return;
+    
+    // Obtenemos el textarea (suponiendo que es el segundo hijo del diálogo)
+    lv_obj_t *password_ta = lv_obj_get_child(dialog, 1);
+    if (!lv_obj_is_valid(password_ta)) return;
+    
+    const char *entered_pass = lv_textarea_get_text(password_ta);
+    if (entered_pass == NULL) {
+        entered_pass = "";
+    }
+    ESP_LOGI(TAG, "Texto ingresado: '%s'", entered_pass);
+    
+    char stored_pass[32] = {0};
+    if (!load_config_password_from_nvs(stored_pass, sizeof(stored_pass))) {
+        // Si no se pudo cargar, usamos la contraseña maestra inicial
+        strcpy(stored_pass, CONFIG_PASSWORD);
+    }
+    ESP_LOGI(TAG, "Contraseña almacenada: '%s'", stored_pass);
+    
+    // Compara las contraseñas
+    if (strcmp(entered_pass, stored_pass) == 0) {
+        // Deshabilita el botón para evitar múltiples clics
+        lv_obj_t *btn = lv_event_get_target(e);
+        if (lv_obj_is_valid(btn)) {
+            lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+        }
+        // Elimina el diálogo y cambia de pantalla
+        lv_obj_del(dialog);
+        switch_screen(create_general_config_screen_in_content);
+    } else {
+        lv_obj_t *error_msg = lv_msgbox_create(NULL, "Error", "Contraseña incorrecta.", NULL, true);
+        lv_obj_center(error_msg);
+    }
+}
+
+// Función para mostrar el diálogo de contraseña
+static void show_config_password_dialog(void) {
+    // Crea un contenedor modal para el diálogo
+    lv_obj_t *dialog = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(dialog, 300, 200);
+    lv_obj_center(dialog);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(dialog, 2, 0);
+
+    // Título del diálogo
+    lv_obj_t *title = lv_label_create(dialog);
+    lv_label_set_text(title, "Ingrese contraseña:");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+    // Campo de texto para la contraseña
+    lv_obj_t *password_ta = lv_textarea_create(dialog);
+    lv_textarea_set_placeholder_text(password_ta, "Contraseña");
+    lv_textarea_set_one_line(password_ta, true);
+    lv_textarea_set_password_mode(password_ta, true);
+    lv_obj_set_width(password_ta, 250);
+    lv_obj_align(password_ta, LV_ALIGN_CENTER, 0, -10);
+    // Se asocia el manejador de teclado (ya definido en el código)
+    lv_obj_add_event_cb(password_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+
+    // Botón de confirmación
+    lv_obj_t *btn_confirm = lv_btn_create(dialog);
+    lv_obj_set_size(btn_confirm, 100, 40);
+    lv_obj_align(btn_confirm, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_t *btn_label = lv_label_create(btn_confirm);
+    lv_label_set_text(btn_label, "Confirmar");
+    lv_obj_center(btn_label);
+    // Se asigna como user_data el diálogo para que el callback pueda eliminarlo en caso de éxito.
+    lv_obj_add_event_cb(btn_confirm, confirm_password_event_cb, LV_EVENT_CLICKED, dialog);
+}
+
+// Callback del botón de configuración general para mostrar el diálogo
+static void btn_to_config_event_cb(lv_event_t *e) {
+    show_config_password_dialog();
+}
+
+
+
+
+
+
+/////////////////////////////////// password general config screen //////////////////////////////////////
+
+// --- Funciones para cargar y guardar la contraseña de configuración en NVS ---
+
+// Intenta cargar la contraseña almacenada en NVS bajo la clave "config_password".
+// Si no existe, se retorna false.
+static bool load_config_password_from_nvs(char *buffer, size_t size) {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
+    if(err != ESP_OK) {
+        return false;
+    }
+    err = nvs_get_str(my_handle, "config_password", buffer, &size);
+    ESP_LOGI(TAG, "Cargando contraseña de NVS: %s", buffer);
+    nvs_close(my_handle);
+    return (err == ESP_OK);
+}
+
+// Guarda la nueva contraseña en NVS bajo la clave "config_password".
+static void save_config_password_to_nvs(const char *password) {
+    nvs_handle_t my_handle;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+    if(err == ESP_OK) {
+        ESP_LOGI(TAG, "Guardando nueva contraseña en NVS: %s", password);
+        nvs_set_str(my_handle, "config_password", password);
+        nvs_commit(my_handle);
+        nvs_close(my_handle);
+    }
+}
+
+
+// Callback sin usar la estructura personalizada, modificado para imprimir la contraseña guardada
+static void password_change_confirm_cb(lv_event_t *e) {
+    // Se obtiene el contenedor del menú de cambio (user_data)
+    lv_obj_t *container = (lv_obj_t *) lv_event_get_user_data(e);
+    if (!lv_obj_is_valid(container)) return;
+    
+    // Suponiendo que el orden de los hijos es:
+    // Índice 0: Título
+    // Índice 1: Textarea de la clave actual
+    // Índice 2: Textarea de la nueva clave
+    // Índice 3: Botón (el que disparó el callback)
+    lv_obj_t *current_pass_ta = lv_obj_get_child(container, 1);
+    lv_obj_t *new_pass_ta = lv_obj_get_child(container, 2);
+    
+    const char *current_pass = lv_textarea_get_text(current_pass_ta);
+    const char *new_pass = lv_textarea_get_text(new_pass_ta);
+    if (current_pass == NULL) current_pass = "";
+    if (new_pass == NULL) new_pass = "";
+    
+    char stored_pass[32] = {0};
+    // Intenta cargar la contraseña almacenada; si falla, usa la contraseña maestra
+    if (!load_config_password_from_nvs(stored_pass, sizeof(stored_pass))) {
+        strcpy(stored_pass, CONFIG_PASSWORD);
+    }
+    ESP_LOGI(TAG, "Clave ingresada: '%s' | Almacenada: '%s'", current_pass, stored_pass);
+    
+    // Verifica que la clave actual coincida con la almacenada
+    if (strcmp(current_pass, stored_pass) != 0) {
+        lv_obj_t *msg = lv_msgbox_create(NULL, "Error", "Clave actual incorrecta.", NULL, true);
+        lv_obj_center(msg);
+        return;
+    }
+    // Verifica que la nueva contraseña no esté vacía
+    if (strlen(new_pass) == 0) {
+        lv_obj_t *msg = lv_msgbox_create(NULL, "Error", "Nueva clave inválida.", NULL, true);
+        lv_obj_center(msg);
+        return;
+    }
+    
+    // Guarda la nueva contraseña en NVS
+    save_config_password_to_nvs(new_pass);
+    
+    // Carga nuevamente y muestra en log para verificar
+    char new_stored[32] = {0};
+    if (load_config_password_from_nvs(new_stored, sizeof(new_stored))) {
+        ESP_LOGI(TAG, "Nueva contraseña almacenada: '%s'", new_stored);
+    } else {
+        ESP_LOGI(TAG, "No se pudo cargar la nueva contraseña");
+    }
+    
+    lv_obj_t *msg = lv_msgbox_create(NULL, "Éxito", "Contraseña actualizada.", NULL, true);
+    lv_obj_center(msg);
+    
+    // Elimina el contenedor para evitar que se reutilicen datos liberados
+    if (lv_obj_is_valid(container)) {
+        lv_obj_del(container);
+    }
+}
+
+
+// Función que crea el menú para cambiar la contraseña sin usar una estructura
+static void create_password_change_menu(lv_obj_t *parent) {
+    // Crea un contenedor para el menú de cambio de contraseña
+    lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_set_size(container, 400, 300);
+    lv_obj_center(container);
+    lv_obj_set_style_bg_color(container, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(container, 2, 0);
+    
+    // Agrega el título (índice 0)
+    lv_obj_t *title = lv_label_create(container);
+    lv_label_set_text(title, "Cambiar Contraseña");
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    
+    // Agrega el textarea para la contraseña actual (índice 1)
+    lv_obj_t *current_pass_ta = lv_textarea_create(container);
+    lv_textarea_set_placeholder_text(current_pass_ta, "Clave actual");
+    lv_textarea_set_one_line(current_pass_ta, true);
+    lv_textarea_set_password_mode(current_pass_ta, true);
+    lv_obj_set_width(current_pass_ta, 300);
+    lv_obj_align(current_pass_ta, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_add_event_cb(current_pass_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+    
+    // Agrega el textarea para la nueva contraseña (índice 2)
+    lv_obj_t *new_pass_ta = lv_textarea_create(container);
+    lv_textarea_set_placeholder_text(new_pass_ta, "Nueva clave");
+    lv_textarea_set_one_line(new_pass_ta, true);
+    lv_textarea_set_password_mode(new_pass_ta, true);
+    lv_obj_set_width(new_pass_ta, 300);
+    lv_obj_align(new_pass_ta, LV_ALIGN_TOP_MID, 0, 100);
+    lv_obj_add_event_cb(new_pass_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
+    
+    // Agrega el botón de confirmación (índice 3)
+    lv_obj_t *confirm_btn = lv_btn_create(container);
+    lv_obj_set_size(confirm_btn, 100, 40);
+    lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_t *btn_label = lv_label_create(confirm_btn);
+    lv_label_set_text(btn_label, "Actualizar");
+    lv_obj_center(btn_label);
+    
+    // Pasa el contenedor (que contiene todos los elementos) como user_data
+    lv_obj_add_event_cb(confirm_btn, password_change_confirm_cb, LV_EVENT_CLICKED, container);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1323,7 +1597,7 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     // Se crean 3 pestañas
     lv_obj_t *tab1 = lv_tabview_add_tab(tabview,"   " LV_SYMBOL_WIFI "\nConfig.\nWiFi");
     lv_obj_t *tab2 = lv_tabview_add_tab(tabview,"    " LV_SYMBOL_LIST "\nConfig.\nProducts");
-    lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "Tab 3");
+    lv_obj_t *tab3 = lv_tabview_add_tab(tabview, "****\nCambiar\nContraseña");
 
     /* --- TAB 1: UI de Configuración WiFi --- */
     lv_obj_t *container1 = lv_obj_create(tab1);
@@ -1336,7 +1610,26 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     /* --- TAB 2: Configuración de productos --- */
     product_config_in_tab(tab2);
 
-    /* --- TAB 3: Contenedor que ocupa todo el espacio --- */
+    // --- TAB 3: Contenedor que ocupa todo el espacio ---
+
+    create_password_change_menu(tab3);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    /*
     lv_obj_t *container3 = lv_obj_create(tab3);
     lv_obj_set_size(container3, lv_obj_get_width(tab3), lv_obj_get_height(tab3));
     lv_obj_set_align(container3, LV_ALIGN_CENTER);
@@ -1344,7 +1637,12 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     lv_obj_clear_flag(container3, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *label3 = lv_label_create(container3);
     lv_label_set_text(label3, "Contenido de Tab 3");
-    lv_obj_center(label3);
+    lv_obj_center(label3); */
+
+
+
+
+
 
     // --- Botón flotante para regresar al main_screen ---
     lv_obj_t *float_btn = lv_btn_create(parent);
@@ -1620,22 +1918,6 @@ void app_main(void)
     
     ESP_LOGI(TAG, "Sistema inicializado. Interfaz lista.");
     
-    /*if(lvgl_lock(-1)) {
-        lv_obj_clean(lv_scr_act());
-        create_general_config_screen();
-        lv_timer_create(update_clock_cb, 1000, NULL);
-        lvgl_unlock();
-    }*/
-    /*if(lvgl_lock(-1)) {
-        lv_obj_clean(lv_scr_act());
-        // Crea la estructura principal: header + content
-        create_main_structure();
-        // Carga la pantalla principal en el área de contenido
-        switch_screen(create_main_screen);
-        // Crea el timer para actualizar el reloj cada segundo
-        lv_timer_create(update_clock_cb, 1000, NULL);
-        lvgl_unlock();
-    }*/
 
     if(lvgl_lock(-1)) {
         lv_obj_clean(lv_scr_act());
