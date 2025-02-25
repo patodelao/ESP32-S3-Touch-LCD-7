@@ -851,10 +851,12 @@ void create_wifi_settings_widget(lv_obj_t *parent) {
     // Configurar el fondo del widget (opcional)
     lv_obj_set_style_bg_color(parent, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLL_ON_FOCUS); // Deshabilitar scroll al enfocar 
     
     // Contenedor principal para la UI de WiFi
     lv_obj_t *container = lv_obj_create(parent);
-    lv_obj_clear_flag(container, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_CLICKABLE);    // Deshabilitar interacción
+    //lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLL_ON_FOCUS); // Deshabilitar scroll al enfocar
     lv_obj_set_size(container, 300, 400);
     lv_obj_center(container);
     lv_obj_set_style_bg_color(container, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
@@ -1034,16 +1036,14 @@ static void create_new_product(lv_event_t *e)
 static void product_config_in_tab(lv_obj_t *parent)
 {
     ESP_LOGI(TAG, "Creating product configuration in tab");
-    //lv_obj_set_size(parent, 800, 480);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_t *config_container = lv_obj_create(parent);
     lv_obj_clear_flag(config_container, LV_OBJ_FLAG_SCROLLABLE);
 
     ESP_LOGI(TAG, "Config container created");
-    //lv_obj_align(config_container, LV_ALIGN_CENTER, -50, 0);
 
-    lv_coord_t w = 800;//lv_obj_get_width(parent);
-    lv_coord_t h = 480;//lv_obj_get_height(parent);
+    lv_coord_t w = 800;
+    lv_coord_t h = 480;
 
 
 
@@ -1132,14 +1132,38 @@ void save_products_to_nvs(void)
     }
     for (uint32_t i = 0; i < cont_index; i++) {
         if (cont_arr[i] == NULL) continue;
+        // Suponemos que el contenedor "cont" guarda como user_data la subpágina con la edición del producto
         lv_obj_t *cont = cont_arr[i];
-        lv_obj_t *name_label = lv_obj_get_child(cont, 0);
-        const char *name = lv_label_get_text(name_label);
+        lv_obj_t *sub_page = lv_obj_get_user_data(cont);
+        if(sub_page == NULL) continue;
+        
+        // Se asume que en sub_page se crearon tres textareas en el siguiente orden:
+        // Índice 0: Nombre, índice 1: Precio, índice 2: Descripción.
+        lv_obj_t *name_ta = lv_obj_get_child(sub_page, 0);
+        lv_obj_t *price_ta = lv_obj_get_child(sub_page, 1);
+        lv_obj_t *desc_ta = lv_obj_get_child(sub_page, 2);
+        
+        const char *name = lv_textarea_get_text(name_ta);
+        const char *price = lv_textarea_get_text(price_ta);
+        const char *desc = lv_textarea_get_text(desc_ta);
+        
         char key[20];
         snprintf(key, sizeof(key), "product_%lu", i);
         err = nvs_set_str(my_handle, key, name);
         if (err != ESP_OK) {
             printf("Error guardando producto %lu\n", i);
+        }
+        
+        snprintf(key, sizeof(key), "price_%lu", i);
+        err = nvs_set_str(my_handle, key, price);
+        if (err != ESP_OK) {
+            printf("Error guardando precio del producto %lu\n", i);
+        }
+        
+        snprintf(key, sizeof(key), "desc_%lu", i);
+        err = nvs_set_str(my_handle, key, desc);
+        if (err != ESP_OK) {
+            printf("Error guardando descripción del producto %lu\n", i);
         }
     }
     nvs_commit(my_handle);
@@ -1170,21 +1194,48 @@ void load_products_for_config(void)
     for (uint32_t i = 0; i < saved_product_count; i++) {
         char key[20];
         char product_name[32];
-        size_t len = sizeof(product_name);
+        size_t name_len = sizeof(product_name);
         snprintf(key, sizeof(key), "product_%lu", i);
-        if (nvs_get_str(my_handle, key, product_name, &len) == ESP_OK) {
+        if (nvs_get_str(my_handle, key, product_name, &name_len) == ESP_OK) {
             ESP_LOGI(TAG, "Loading product %lu: %s", i, product_name);
+            
+            // Cargar precio
+            char price_key[20];
+            char product_price[16];
+            size_t price_len = sizeof(product_price);
+            snprintf(price_key, sizeof(price_key), "price_%lu", i);
+            if(nvs_get_str(my_handle, price_key, product_price, &price_len) != ESP_OK){
+                strcpy(product_price, "50");
+            }
+            
+            // Cargar descripción
+            char desc_key[20];
+            char product_desc[64];  // Ajusta el tamaño según tus necesidades
+            size_t desc_len = sizeof(product_desc);
+            snprintf(desc_key, sizeof(desc_key), "desc_%lu", i);
+            if(nvs_get_str(my_handle, desc_key, product_desc, &desc_len) != ESP_OK){
+                strcpy(product_desc, "");
+            }
+            
+            // Crea la sub-página para editar el producto
             lv_obj_t *new_sub_page = lv_menu_page_create(menu, NULL);
+            // Crea el campo de nombre y asigna el valor leído
             lv_obj_t *name_ta = create_textarea(new_sub_page, "Nombre");
             lv_textarea_set_text(name_ta, product_name);
+            // Crea el campo de precio y asigna el valor leído
             lv_obj_t *price_ta = create_textarea(new_sub_page, "Precio");
-            lv_textarea_set_text(price_ta, "");
+            lv_textarea_set_text(price_ta, product_price);
+            // Crea el campo de descripción y asigna el valor leído
             lv_obj_t *desc_ta = create_textarea(new_sub_page, "Descripción");
-            lv_textarea_set_text(desc_ta, "");
+            lv_textarea_set_text(desc_ta, product_desc);
+            
+            // Crea el botón de guardar
             lv_obj_t *save_btn = lv_btn_create(new_sub_page);
             lv_obj_t *save_label = lv_label_create(save_btn);
             lv_label_set_text(save_label, "Guardar");
             lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, new_sub_page);
+            
+            // Crea el contenedor del ítem en el menú principal
             lv_obj_t *cont = lv_menu_cont_create(main_page);
             lv_obj_t *cont_label = lv_label_create(cont);
             lv_label_set_text(cont_label, product_name);
@@ -1199,6 +1250,7 @@ void load_products_for_config(void)
     nvs_close(my_handle);
     ESP_LOGI(TAG, "Finished loading products from NVS. Total products: %lu", cont_index);
 }
+
 
 
 
@@ -1471,29 +1523,29 @@ static void password_change_confirm_cb(lv_event_t *e) {
     if (new_pass == NULL) new_pass = "";
     
     char stored_pass[32] = {0};
-    // Intenta cargar la contraseña almacenada; si falla, usa la contraseña maestra
+    // Intenta cargar la contraseña almacenada; si falla, se usa la contraseña maestra CONFIG_PASSWORD.
     if (!load_config_password_from_nvs(stored_pass, sizeof(stored_pass))) {
         strcpy(stored_pass, CONFIG_PASSWORD);
     }
     ESP_LOGI(TAG, "Clave ingresada: '%s' | Almacenada: '%s'", current_pass, stored_pass);
     
-    // Verifica que la clave actual coincida con la almacenada
+    // Verifica que la clave actual ingresada coincida con la almacenada.
     if (strcmp(current_pass, stored_pass) != 0) {
         lv_obj_t *msg = lv_msgbox_create(NULL, "Error", "Clave actual incorrecta.", NULL, true);
         lv_obj_center(msg);
         return;
     }
-    // Verifica que la nueva contraseña no esté vacía
+    // Verifica que la nueva contraseña no esté vacía.
     if (strlen(new_pass) == 0) {
         lv_obj_t *msg = lv_msgbox_create(NULL, "Error", "Nueva clave inválida.", NULL, true);
         lv_obj_center(msg);
         return;
     }
     
-    // Guarda la nueva contraseña en NVS
+    // Guarda la nueva contraseña en NVS.
     save_config_password_to_nvs(new_pass);
     
-    // Carga nuevamente y muestra en log para verificar
+    // Carga nuevamente la contraseña almacenada para verificar e imprimir.
     char new_stored[32] = {0};
     if (load_config_password_from_nvs(new_stored, sizeof(new_stored))) {
         ESP_LOGI(TAG, "Nueva contraseña almacenada: '%s'", new_stored);
@@ -1504,10 +1556,9 @@ static void password_change_confirm_cb(lv_event_t *e) {
     lv_obj_t *msg = lv_msgbox_create(NULL, "Éxito", "Contraseña actualizada.", NULL, true);
     lv_obj_center(msg);
     
-    // Elimina el contenedor para evitar que se reutilicen datos liberados
-    if (lv_obj_is_valid(container)) {
-        lv_obj_del(container);
-    }
+    // Limpia los campos para que el contenedor permanezca y pueda usarse de nuevo.
+    lv_textarea_set_text(current_pass_ta, "");
+    lv_textarea_set_text(new_pass_ta, "");
 }
 
 
