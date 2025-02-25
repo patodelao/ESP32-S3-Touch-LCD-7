@@ -849,14 +849,16 @@ static void connect_event_handler(lv_event_t *event) {
 
 void create_wifi_settings_widget(lv_obj_t *parent) {
     // Configurar el fondo del widget (opcional)
+    lv_obj_set_size(parent, 300, 400);
+    lv_obj_center(parent);
+
     lv_obj_set_style_bg_color(parent, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
-    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLL_ON_FOCUS); // Deshabilitar scroll al enfocar 
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE); // Deshabilitar scroll
     
     // Contenedor principal para la UI de WiFi
     lv_obj_t *container = lv_obj_create(parent);
-    lv_obj_clear_flag(container, LV_OBJ_FLAG_CLICKABLE);    // Deshabilitar interacción
-    //lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLL_ON_FOCUS); // Deshabilitar scroll al enfocar
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE); // Deshabilitar scroll 
     lv_obj_set_size(container, 300, 400);
     lv_obj_center(container);
     lv_obj_set_style_bg_color(container, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
@@ -1669,9 +1671,10 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
 
     /* --- TAB 1: UI de Configuración WiFi --- */
     lv_obj_t *container1 = lv_obj_create(tab1);
-    lv_obj_set_size(container1, lv_obj_get_width(tab1), lv_obj_get_height(tab1));
+   // lv_obj_set_size(container1, lv_obj_get_width(tab1), lv_obj_get_height(tab1));
     lv_obj_set_align(container1, LV_ALIGN_CENTER);
     lv_obj_clear_flag(container1, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(container1, LV_SCROLLBAR_MODE_OFF);
     // Se llama a la función para crear la UI de WiFi dentro de container1
     create_wifi_settings_widget(container1);
 
