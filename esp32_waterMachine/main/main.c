@@ -170,6 +170,7 @@ static lv_obj_t *float_btn_del_all;
 // DECLARACIONES DE FUNCIONES USADAS
 // -------------------------
 static void process_received_command(const uint8_t *command, size_t length);
+static bool verify_lrc_rx(const uint8_t *data, size_t length);
 uint8_t calculate_lrc(const uint8_t *data, size_t length);
 void create_transaction_command(const char *monto);
 static void product_item_event_cb(lv_event_t * e);
@@ -710,7 +711,7 @@ static void uart_RX_task(void *param) {
 
 // Procesa el comando recibido y responde con ACK o NAK
 static void process_received_command(const uint8_t *command, size_t length) {
-    if (verify_lrc(command, length)) {
+    if (verify_lrc_rx(command, length)) {
         printf("Comando válido. Enviando ACK.\n");
         uint8_t ack = 0x06; // ACK
         uart_send_command(&ack, 1);
@@ -1073,6 +1074,15 @@ static bool verify_lrc(const uint8_t *data, size_t length) {
     return calculated_lrc == received_lrc;
 }
 
+static bool verify_lrc_rx(const uint8_t *data, size_t length) {
+    if (length < 3) return false; // Debe tener al menos STX, ETX y LRC
+
+    uint8_t calculated_lrc = calculate_lrc(data, length - 1); // Incluye STX y LRC
+    uint8_t received_lrc = data[length - 1];
+
+    return calculated_lrc == received_lrc;
+}
+
 
 void create_transaction_command(const char *monto) {
     char monto_formateado[10];
@@ -1083,8 +1093,8 @@ void create_transaction_command(const char *monto) {
 
     const char *codigo_cmd = "0200";
     const char *ticket_number = "2189aaA987321";
-    const char *campo_impresion = "1";
-    const char *enviar_msj = "1";
+    const char *campo_impresion = "0";
+    const char *enviar_msj = "0";
 
     char command[256];
     snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto_formateado, ticket_number, campo_impresion, enviar_msj);
