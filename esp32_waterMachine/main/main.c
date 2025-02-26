@@ -16,6 +16,8 @@
 #include "nvs.h"
 #include "esp_err.h"
 
+#include "driver/uart.h"
+
 #include "lvgl.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
@@ -83,6 +85,15 @@
 #define LVGL_TASK_STACK_SIZE        (8 * 1024)
 #define LVGL_TASK_PRIORITY          2
 
+#define UART_NUM 2
+#define UART_TX_PIN 43
+#define UART_RX_PIN 44
+#define UART_BUFFER_SIZE 1024
+#define MAX_RETRIES_ACK 3
+#define ACK_TIMEOUT_MS 1000
+#define STX 0x02
+#define ETX 0x03
+
 static const char *TAG = "waterMachine";
 
 // -------------------------
@@ -127,6 +138,22 @@ static char new_dropdown_options[256] = "";
 static volatile bool update_dropdown_flag = false;
 
 
+
+///////////////////////// Variables de uart //////////////////////////
+static QueueHandle_t ack_queue = NULL;
+
+
+
+// --------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
 // Variables para la configuración de productos
 #define MAX_ITEMS 10
 static uint32_t cont_index = 0;
@@ -140,6 +167,7 @@ static lv_obj_t *float_btn_del_all;
 // -------------------------
 // DECLARACIONES DE FUNCIONES USADAS
 // -------------------------
+void create_transaction_command(const char *monto);
 static void product_item_event_cb(lv_event_t * e);
 void init_nvs(void);
 static void init_uart(void);
@@ -180,6 +208,97 @@ static bool load_config_password_from_nvs(char *buffer, size_t size);
 // -------------------------
 // IMPLEMENTACIONES
 // -------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+//--------------------------------------- TRANSACCIONES --------------------------------------- 
+// Función para extraer el monto del producto seleccionado y generar el comando de transacción
+void generate_transaction_from_selected_product(lv_obj_t *exhibitor_panel) {
+    uint32_t child_count = lv_obj_get_child_cnt(exhibitor_panel);
+    for (uint32_t i = 0; i < child_count; i++) {
+        lv_obj_t *item = lv_obj_get_child(exhibitor_panel, i);
+        lv_color_t current_color = lv_obj_get_style_bg_color(item, LV_PART_MAIN);
+
+        // Si el color es verde (producto seleccionado)
+        if (current_color.full == lv_color_make(0, 255, 0).full) {
+            lv_obj_t *price_label = lv_obj_get_child(item, 1);
+            const char *price_text = lv_label_get_text(price_label);
+
+            // Extraer el valor numérico del precio (eliminando el símbolo '$')
+            if (price_text[0] == '$') {
+                price_text++;
+            }
+
+            // Llamar a la función para crear el comando de transacción
+            create_transaction_command(price_text);
+            ESP_LOGI("TRANSACTION", "Comando de transacción generado para el monto: %s", price_text);
+            return;
+        }
+    }
+
+    ESP_LOGW("TRANSACTION", "No se seleccionó ningún producto.");
+}
+
+// Callback para el botón de compra
+static void buy_button_event_cb(lv_event_t *e) {
+    lv_obj_t *exhibitor_panel = lv_event_get_user_data(e);
+    generate_transaction_from_selected_product(exhibitor_panel);
+}
+
+// Función para agregar el botón de compra
+void add_buy_button(lv_obj_t *parent, lv_obj_t *exhibitor_panel) {
+    lv_obj_t *buy_btn = lv_btn_create(parent);
+    lv_obj_set_size(buy_btn, 100, 50);
+    lv_obj_align(buy_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_add_event_cb(buy_btn, buy_button_event_cb, LV_EVENT_CLICKED, exhibitor_panel);
+
+    lv_obj_t *label = lv_label_create(buy_btn);
+    lv_label_set_text(label, "Comprar");
+    lv_obj_center(label);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #define MAX_RETRIES 5
@@ -529,11 +648,27 @@ void init_nvs(void){
     ESP_LOGI(TAG, "NVS initialized successfully");
 }
 
-// Inicialización de UART (actualmente no se usa)
-static void init_uart(void)
-{
-    ESP_LOGI(TAG, "UART initialization (no se utiliza en el flujo actual)");
+// Inicialización de UART 
+void init_uart(void) {
+    const uart_config_t uart_config = {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_APB
+    };
+
+    uart_param_config(UART_NUM, &uart_config);
+    uart_set_pin(UART_NUM, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(UART_NUM, UART_BUFFER_SIZE, UART_BUFFER_SIZE, 10, &ack_queue, 0);
+    ESP_LOGI(TAG, "UART initialization successful");
 }
+
+void uart_send_command(const uint8_t *command, size_t length) {
+    uart_write_bytes(UART_NUM, (const char *)command, length);
+}
+
 
 // Inicializa el panel LCD RGB
 esp_lcd_panel_handle_t init_lcd_panel(void){
@@ -749,6 +884,118 @@ void register_lcd_event_callbacks(esp_lcd_panel_handle_t panel_handle, lv_disp_d
     };
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(panel_handle, &cbs, disp_drv));
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// -------------------------
+// GENERACIÓN DE COMANDOS
+// -------------------------
+
+
+uint8_t calculate_lrc(const uint8_t *data, size_t length) {
+    uint8_t lrc = 0;
+    for (size_t i = 0; i < length; i++) {
+        lrc ^= data[i];
+    }
+    return lrc;
+}
+
+void create_transaction_command(const char *monto) {
+    char monto_formateado[10];
+    memset(monto_formateado, '0', 9);
+    monto_formateado[9] = '\0';
+    int len_monto = strlen(monto);
+    memmove(monto_formateado + (9 - len_monto), monto, len_monto);
+
+    const char *codigo_cmd = "0200";
+    const char *ticket_number = "2189aaA987321";
+    const char *campo_impresion = "1";
+    const char *enviar_msj = "1";
+
+    char command[256];
+    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto_formateado, ticket_number, campo_impresion, enviar_msj);
+
+    size_t command_length = strlen(command) + 3;
+    uint8_t *formatted_command = malloc(command_length);
+
+    if (!formatted_command) {
+        ESP_LOGE(TAG, "Error: No se pudo asignar memoria para el comando.");
+        return;
+    }
+
+    size_t index = 0;
+    formatted_command[index++] = STX;
+    memcpy(&formatted_command[index], command, strlen(command));
+    index += strlen(command);
+    formatted_command[index++] = ETX;
+
+    uint8_t lrc = calculate_lrc(formatted_command + 1, index - 1);
+    formatted_command[index++] = lrc;
+
+    ESP_LOGI(TAG, "Mensaje construido dinámicamente:");
+    for (size_t i = 0; i < index; i++) {
+        printf("%02X ", formatted_command[i]);
+    }
+    printf("\nLRC Calculado: %02X\n", lrc);
+
+    uart_send_command(formatted_command, index);
+
+    free(formatted_command);
+}
+
+
+
+
+
+
 
 
 
@@ -990,8 +1237,7 @@ static void save_objects_btn(lv_event_t *e)
 }
 
 // Crea un nuevo producto y su correspondiente sub-página
-static void create_new_product(lv_event_t *e)
-{
+static void create_new_product(lv_event_t *e) {
     ESP_LOGI(TAG, "Creating new product. Current count: %lu", cont_index);
     if (cont_index >= MAX_ITEMS) {
         ESP_LOGW(TAG, "Maximum products reached");
@@ -1004,26 +1250,28 @@ static void create_new_product(lv_event_t *e)
     // Crea el campo "Nombre" y le agrega el evento para mostrar el teclado
     lv_obj_t *name_ta = create_textarea(new_sub_page, "Nombre");
     lv_obj_add_event_cb(name_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
-    
+    static char default_name[20];
+    snprintf(default_name, sizeof(default_name), "Producto %lu", cont_index + 1);
+    lv_textarea_set_text(name_ta, default_name);  // Nombre por defecto
+
     // Crea el campo "Precio"
     lv_obj_t *price_ta = create_textarea(new_sub_page, "Precio");
     lv_obj_add_event_cb(price_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
-    
+    lv_textarea_set_text(price_ta, "100");  // Precio por defecto
+
     // Crea el campo "Descripción"
     lv_obj_t *desc_ta = create_textarea(new_sub_page, "Descripción");
     lv_obj_add_event_cb(desc_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
-    
+
     // Crea el botón de guardar
     lv_obj_t *save_btn = lv_btn_create(new_sub_page);
     lv_obj_t *label = lv_label_create(save_btn);
     lv_label_set_text(label, "Guardar");
     lv_obj_add_event_cb(save_btn, save_button_event_cb, LV_EVENT_CLICKED, new_sub_page);
     ESP_LOGI(TAG, "Save button created for new product");
-    
+
     lv_obj_t *cont = lv_menu_cont_create(main_page);
     lv_obj_t *cont_label = lv_label_create(cont);
-    static char default_name[20];
-    snprintf(default_name, sizeof(default_name), "Producto %lu", cont_index + 1);
     lv_label_set_text(cont_label, default_name);
     lv_menu_set_load_page_event(menu, cont, new_sub_page);
     lv_obj_set_user_data(cont, new_sub_page);
@@ -1796,10 +2044,22 @@ void create_main_screen(lv_obj_t *parent) {
         nvs_close(my_handle);
     }
     
+    //add_buy_button(parent, exhibitor_panel);
+
+
+    // --- Botón de compra ---
+    lv_obj_t *buy_btn = lv_btn_create(parent);
+    lv_obj_set_size(buy_btn, 100, 50);
+    lv_obj_align(buy_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_add_event_cb(buy_btn, buy_button_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *buy_label = lv_label_create(buy_btn);
+    lv_label_set_text(buy_label, "Comprar");
+    lv_obj_center(buy_label);
+
     // --- Botón de Configuración ---
     lv_obj_t *btn_config = lv_btn_create(parent);
     lv_obj_set_size(btn_config, 40, 40);
-    lv_obj_align(btn_config, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_align(btn_config, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     // Usa el callback que ya tienes para ir a la pantalla de configuración
     lv_obj_add_event_cb(btn_config, btn_to_config_event_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label_config = lv_label_create(btn_config);
@@ -2002,8 +2262,6 @@ void app_main(void)
         lv_timer_create(update_clock_cb, 1000, NULL); // Crea el timer para actualizar el reloj cada segundo
 
         
-        //lv_timer_create(dropdown_update_timer_cb, 200, NULL); // Crea un timer para actualizar el dropdown
-
         lvgl_unlock();
     }
 }

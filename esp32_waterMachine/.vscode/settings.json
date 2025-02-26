@@ -7,6 +7,7 @@
         "lv_examples.h": "c",
         "lv_demos.h": "c",
         "lvgl.h": "c",
-        "sstream": "c"
+        "sstream": "c",
+        "random": "c"
     }
 }

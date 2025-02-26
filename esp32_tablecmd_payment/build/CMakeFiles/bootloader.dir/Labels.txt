@@ -1,13 +1,13 @@
 # Target labels
  bootloader
 # Source files and their labels
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/CMakeFiles/bootloader
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/CMakeFiles/bootloader.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/CMakeFiles/bootloader-complete.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
-C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/CMakeFiles/bootloader
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/CMakeFiles/bootloader.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/CMakeFiles/bootloader-complete.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
