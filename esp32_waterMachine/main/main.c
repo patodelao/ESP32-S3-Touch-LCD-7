@@ -231,22 +231,24 @@ void generate_transaction_from_selected_product(lv_obj_t *exhibitor_panel) {
         // Si el color es verde (producto seleccionado)
         if (current_color.full == lv_color_make(0, 255, 0).full) {
             lv_obj_t *price_label = lv_obj_get_child(item, 1);
-            const char *price_text = lv_label_get_text(price_label);
+            if (price_label != NULL) {
+                const char *price_text = lv_label_get_text(price_label);
 
-            // Extraer el valor numérico del precio (eliminando el símbolo '$')
-            if (price_text[0] == '$') {
-                price_text++;
+                // Extraer el valor numérico del precio (eliminando el símbolo '$')
+                if (price_text[0] == '$') {
+                    price_text++;
+                }
+
+                // Llamar a la función para crear el comando de transacción
+                create_transaction_command(price_text);
+                ESP_LOGI("TRANSACTION", "Comando de transacción generado para el monto: %s", price_text);
+                return;
             }
-
-            // Llamar a la función para crear el comando de transacción
-            create_transaction_command(price_text);
-            ESP_LOGI("TRANSACTION", "Comando de transacción generado para el monto: %s", price_text);
-            return;
         }
     }
-
     ESP_LOGW("TRANSACTION", "No se seleccionó ningún producto.");
 }
+
 
 // Callback para el botón de compra
 static void buy_button_event_cb(lv_event_t *e) {
@@ -254,17 +256,7 @@ static void buy_button_event_cb(lv_event_t *e) {
     generate_transaction_from_selected_product(exhibitor_panel);
 }
 
-// Función para agregar el botón de compra
-void add_buy_button(lv_obj_t *parent, lv_obj_t *exhibitor_panel) {
-    lv_obj_t *buy_btn = lv_btn_create(parent);
-    lv_obj_set_size(buy_btn, 100, 50);
-    lv_obj_align(buy_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
-    lv_obj_add_event_cb(buy_btn, buy_button_event_cb, LV_EVENT_CLICKED, exhibitor_panel);
 
-    lv_obj_t *label = lv_label_create(buy_btn);
-    lv_label_set_text(label, "Comprar");
-    lv_obj_center(label);
-}
 
 
 
@@ -2051,10 +2043,12 @@ void create_main_screen(lv_obj_t *parent) {
     lv_obj_t *buy_btn = lv_btn_create(parent);
     lv_obj_set_size(buy_btn, 100, 50);
     lv_obj_align(buy_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
-    lv_obj_add_event_cb(buy_btn, buy_button_event_cb, LV_EVENT_CLICKED, NULL);
+    // Se pasa el exhibitor_panel como user_data
+    lv_obj_add_event_cb(buy_btn, buy_button_event_cb, LV_EVENT_CLICKED, exhibitor_panel);
     lv_obj_t *buy_label = lv_label_create(buy_btn);
     lv_label_set_text(buy_label, "Comprar");
     lv_obj_center(buy_label);
+
 
     // --- Botón de Configuración ---
     lv_obj_t *btn_config = lv_btn_create(parent);
