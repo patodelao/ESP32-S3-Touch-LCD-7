@@ -140,7 +140,10 @@ static volatile bool update_dropdown_flag = false;
 
 
 ///////////////////////// Variables de uart //////////////////////////
-static QueueHandle_t ack_queue = NULL;
+static QueueHandle_t uart_event_queue = NULL; // Cola para eventos de UART
+static QueueHandle_t ack_queue = NULL; // Cola para ACK/NAK
+static QueueHandle_t command_queue = NULL; // Cola para comandos recibidos
+static TaskHandle_t uart_task_handle = NULL; // Handle de la tarea de UART
 
 
 
@@ -641,7 +644,7 @@ void init_nvs(void){
 }
 
 // Inicialización de UART 
-void init_uart(void) {
+static void init_uart(void) {
     const uart_config_t uart_config = {
         .baud_rate = 115200,
         .data_bits = UART_DATA_8_BITS,
@@ -653,13 +656,102 @@ void init_uart(void) {
 
     uart_param_config(UART_NUM, &uart_config);
     uart_set_pin(UART_NUM, UART_TX_PIN, UART_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    uart_driver_install(UART_NUM, UART_BUFFER_SIZE, UART_BUFFER_SIZE, 10, &ack_queue, 0);
-    ESP_LOGI(TAG, "UART initialization successful");
+    uart_driver_install(UART_NUM, UART_BUFFER_SIZE, UART_BUFFER_SIZE, 10, &uart_event_queue, 0);
+
+    // Crear colas
+    ack_queue = xQueueCreate(5, sizeof(uint8_t)); 
+    command_queue = xQueueCreate(10, UART_BUFFER_SIZE);
+
+    if (!command_queue || !ack_queue) {
+        printf("Error: No se pudo crear las colas.\n");
+    }
 }
+
 
 void uart_send_command(const uint8_t *command, size_t length) {
     uart_write_bytes(UART_NUM, (const char *)command, length);
 }
+
+
+static void uart_RX_task(void *param) {
+    uint8_t data_buffer[UART_BUFFER_SIZE];
+    size_t bytes_read = 0;
+
+    while (1) {
+        uart_event_t event;
+        if (xQueueReceive(uart_event_queue, &event, portMAX_DELAY)) {
+            switch (event.type) {
+                case UART_DATA:
+                    bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer), pdMS_TO_TICKS(10));
+                    if (bytes_read > 0) {
+                        for (size_t i = 0; i < bytes_read; i++) {
+                            // Verificar ACK o NAK
+                            if (data_buffer[i] == 0x06 || data_buffer[i] == 0x15) {
+                                xQueueSend(ack_queue, &data_buffer[i], portMAX_DELAY);
+                            }
+                        }
+
+                        // Enviar el mensaje completo a la cola de procesamiento
+                        xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100));
+                    }
+                    break;
+
+                default:
+                    printf("Evento UART no manejado: %d\n", event.type);
+                    break;
+            }
+        }
+    }
+}
+
+
+static void command_processing_task(void *param) {
+    uint8_t command_buffer[UART_BUFFER_SIZE];
+
+    while (1) {
+        if (xQueueReceive(command_queue, command_buffer, portMAX_DELAY)) {
+            printf("Procesando comando: %s\n", command_buffer);
+            // Procesa el comando recibido (puedes agregar lógica según el protocolo que uses)
+        }
+    }
+}
+
+
+
+static void wait_for_ack_task(void *param) {
+    uint8_t *command = (uint8_t *)param;
+    size_t length = strlen((char *)command);
+
+    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        printf("Intento %d: Enviando comando...\n", attempt);
+        uart_write_bytes(UART_NUM, (const char *)command, length);
+
+        uint8_t received_byte;
+        if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
+            if (received_byte == 0x06) {
+                printf("ACK recibido.\n");
+                break;
+            } else if (received_byte == 0x15) {
+                printf("NAK recibido. Reintentando...\n");
+            }
+        } else {
+            printf("Timeout esperando ACK.\n");
+        }
+    }
+
+    free(command);
+    vTaskDelete(NULL);
+}
+
+
+void send_command_with_ack(const char *command) {
+    uint8_t *formatted_command = malloc(strlen(command) + 1);
+    strcpy((char *)formatted_command, command);
+
+    xTaskCreate(wait_for_ack_task, "wait_for_ack_task", 4096, formatted_command, 2, NULL);
+}
+
+
 
 
 // Inicializa el panel LCD RGB
@@ -2241,6 +2333,16 @@ void app_main(void)
     lv_disp_t *disp = init_lvgl(panel_handle);
     start_lvgl_task(disp, tp);
     
+
+    // Crear tareas para recibir y procesar UART
+    //xTaskCreate(uart_RX_task, "uart_RX_task", 4096, NULL, 2, NULL);
+    //xTaskCreate(command_processing_task, "command_processing_task", 4096, NULL, 1, NULL);
+
+    // Crear tareas para recibir y procesar UART
+    xTaskCreatePinnedToCore(uart_RX_task, "uart_RX_task", 4096, NULL, 2, NULL, 0); // Core 0
+    xTaskCreate(command_processing_task, "command_processing_task", 4096, NULL, 1, NULL); // Sin núcleo fijo
+
+
     ESP_LOGI(TAG, "Sistema inicializado. Interfaz lista.");
     
 
