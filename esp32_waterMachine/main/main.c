@@ -143,7 +143,6 @@ static volatile bool update_dropdown_flag = false;
 static QueueHandle_t uart_event_queue = NULL; // Cola para eventos de UART
 static QueueHandle_t ack_queue = NULL; // Cola para ACK/NAK
 static QueueHandle_t command_queue = NULL; // Cola para comandos recibidos
-static TaskHandle_t uart_task_handle = NULL; // Handle de la tarea de UART
 
 
 
@@ -170,6 +169,8 @@ static lv_obj_t *float_btn_del_all;
 // -------------------------
 // DECLARACIONES DE FUNCIONES USADAS
 // -------------------------
+static void process_received_command(const uint8_t *command, size_t length);
+uint8_t calculate_lrc(const uint8_t *data, size_t length);
 void create_transaction_command(const char *monto);
 static void product_item_event_cb(lv_event_t * e);
 void init_nvs(void);
@@ -202,6 +203,7 @@ void load_products_for_config(void);
 void create_general_config_screen_in_content(lv_obj_t *parent);
 void create_main_screen(lv_obj_t *parent);
 void switch_screen(void (*create_screen)(lv_obj_t *parent));
+static bool verify_lrc(const uint8_t *data, size_t length);
 
 // -------------------------
 // DECLARACIONES DE FUNCIONES USADAS
@@ -705,22 +707,43 @@ static void uart_RX_task(void *param) {
 }
 
 
+
+// Procesa el comando recibido y responde con ACK o NAK
+static void process_received_command(const uint8_t *command, size_t length) {
+    if (verify_lrc(command, length)) {
+        printf("Comando válido. Enviando ACK.\n");
+        uint8_t ack = 0x06; // ACK
+        uart_send_command(&ack, 1);
+    } else {
+        printf("Comando inválido. Enviando NAK.\n");
+        uint8_t nak = 0x15; // NAK
+        uart_send_command(&nak, 1);
+    }
+}
+
 static void command_processing_task(void *param) {
     uint8_t command_buffer[UART_BUFFER_SIZE];
 
     while (1) {
         if (xQueueReceive(command_queue, command_buffer, portMAX_DELAY)) {
+            size_t length = strlen((char *)command_buffer); // Longitud del comando
             printf("Procesando comando: %s\n", command_buffer);
-            // Procesa el comando recibido (puedes agregar lógica según el protocolo que uses)
+            process_received_command(command_buffer, length);
         }
     }
 }
 
 
 
+
 static void wait_for_ack_task(void *param) {
-    uint8_t *command = (uint8_t *)param;
-    size_t length = strlen((char *)command);
+
+    struct CommandParams {
+        uint8_t *command;
+        size_t length;
+    } *params = (struct CommandParams *)param;
+    uint8_t *command = params->command;
+    size_t length = params->length;
 
     for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         printf("Intento %d: Enviando comando...\n", attempt);
@@ -739,17 +762,25 @@ static void wait_for_ack_task(void *param) {
         }
     }
 
-    free(command);
+    free(params->command);
+    free(params);
     vTaskDelete(NULL);
 }
 
 
-void send_command_with_ack(const char *command) {
-    uint8_t *formatted_command = malloc(strlen(command) + 1);
-    strcpy((char *)formatted_command, command);
+void send_command_with_ack(const uint8_t *command, size_t length) {
+    struct CommandParams {
+        uint8_t *command;
+        size_t length;
+    } *params = malloc(sizeof(struct CommandParams));
 
-    xTaskCreate(wait_for_ack_task, "wait_for_ack_task", 4096, formatted_command, 2, NULL);
+    params->command = malloc(length);
+    memcpy(params->command, command, length);
+    params->length = length;
+
+    xTaskCreate(wait_for_ack_task, "wait_for_ack_task", 4096, params, 2, NULL);
 }
+
 
 
 
@@ -1032,6 +1063,17 @@ uint8_t calculate_lrc(const uint8_t *data, size_t length) {
     return lrc;
 }
 
+// Verifica el LRC de un comando recibido
+static bool verify_lrc(const uint8_t *data, size_t length) {
+    if (length < 3) return false; // Debe tener al menos STX, ETX y LRC
+
+    uint8_t calculated_lrc = calculate_lrc(data + 1, length - 3); // Excluye STX y LRC
+    uint8_t received_lrc = data[length - 1];
+
+    return calculated_lrc == received_lrc;
+}
+
+
 void create_transaction_command(const char *monto) {
     char monto_formateado[10];
     memset(monto_formateado, '0', 9);
@@ -1070,7 +1112,8 @@ void create_transaction_command(const char *monto) {
     }
     printf("\nLRC Calculado: %02X\n", lrc);
 
-    uart_send_command(formatted_command, index);
+    send_command_with_ack(formatted_command, index);
+    //uart_send_command(formatted_command, index);
 
     free(formatted_command);
 }
@@ -2334,9 +2377,6 @@ void app_main(void)
     start_lvgl_task(disp, tp);
     
 
-    // Crear tareas para recibir y procesar UART
-    //xTaskCreate(uart_RX_task, "uart_RX_task", 4096, NULL, 2, NULL);
-    //xTaskCreate(command_processing_task, "command_processing_task", 4096, NULL, 1, NULL);
 
     // Crear tareas para recibir y procesar UART
     xTaskCreatePinnedToCore(uart_RX_task, "uart_RX_task", 4096, NULL, 2, NULL, 0); // Core 0

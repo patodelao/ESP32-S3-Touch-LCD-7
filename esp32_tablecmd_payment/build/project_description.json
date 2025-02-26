@@ -1,7 +1,7 @@
 {
     "version":            "1.1",
     "project_name":       "rgb_panel",
-    "project_version":    "dbef4faa-dirty",
+    "project_version":    "eca24842-dirty",
     "project_path":       "C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment",
     "idf_path":           "C:/Users/patricio.delao/esp/v5.3.2/esp-idf",
     "build_dir":          "C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_tablecmd_payment/build",
