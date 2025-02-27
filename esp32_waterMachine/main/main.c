@@ -1876,12 +1876,11 @@ void create_main_structure(void) {
 
 // Callback para el botón de confirmación en el diálogo de contraseña, usando NVS.
 static void confirm_password_event_cb(lv_event_t *e) {
-    // "user_data" es nuestro diálogo
     lv_obj_t *dialog = lv_event_get_user_data(e);
     if (!lv_obj_is_valid(dialog)) return;
     
-    // Obtenemos el textarea (suponiendo que es el segundo hijo del diálogo)
-    lv_obj_t *password_ta = lv_obj_get_child(dialog, 1);
+    // Se obtiene el textarea que se encuentra en el índice 2 (según el orden de creación)
+    lv_obj_t *password_ta = lv_obj_get_child(dialog, 2);
     if (!lv_obj_is_valid(password_ta)) return;
     
     const char *entered_pass = lv_textarea_get_text(password_ta);
@@ -1892,19 +1891,16 @@ static void confirm_password_event_cb(lv_event_t *e) {
     
     char stored_pass[32] = {0};
     if (!load_config_password_from_nvs(stored_pass, sizeof(stored_pass))) {
-        // Si no se pudo cargar, usamos la contraseña maestra inicial
         strcpy(stored_pass, CONFIG_PASSWORD);
     }
     ESP_LOGI(TAG, "Contraseña almacenada: '%s'", stored_pass);
     
-    // Compara las contraseñas
     if (strcmp(entered_pass, stored_pass) == 0) {
-        // Deshabilita el botón para evitar múltiples clics
+        // Se deshabilita el botón para evitar múltiples clics
         lv_obj_t *btn = lv_event_get_target(e);
         if (lv_obj_is_valid(btn)) {
             lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE);
         }
-        // Elimina el diálogo y cambia de pantalla
         lv_obj_del(dialog);
         config_password_dialog = NULL;
         switch_screen(create_general_config_screen_in_content);
@@ -1912,8 +1908,7 @@ static void confirm_password_event_cb(lv_event_t *e) {
         lv_obj_t *error_msg = lv_msgbox_create(NULL, "Error", "Contraseña incorrecta.", NULL, true);
         lv_obj_center(error_msg);
     }
-}   
-
+}
 
 
 
