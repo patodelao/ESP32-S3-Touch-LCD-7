@@ -447,7 +447,7 @@ static void wifi_scan_task(void *param) {
         .show_hidden = true,
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time.active.min = 50,
-        .scan_time.active.max = 700,
+        .scan_time.active.max = 1000,
     };
 
     esp_err_t err = esp_wifi_scan_start(&scan_config, false);
@@ -458,7 +458,7 @@ static void wifi_scan_task(void *param) {
     }
     ESP_ERROR_CHECK(err);
 
-    vTaskDelay(pdMS_TO_TICKS(700)); // Espera 0.5 segundo
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Espera 0.5 segundo
 
     esp_wifi_scan_stop();
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
@@ -2369,12 +2369,12 @@ void create_general_config_screen(lv_obj_t *parent) {
     lv_obj_t *float_btn = lv_btn_create(parent);
     lv_obj_set_size(float_btn, 50, 50);
     // Coloca el botón flotante en la esquina inferior derecha del contenedor padre
-    lv_obj_align(float_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+    lv_obj_align(float_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -17);
     lv_obj_set_style_radius(float_btn, LV_RADIUS_CIRCLE, 0);
     // Opcional: asigna un color de fondo o ícono
     lv_obj_set_style_bg_color(float_btn, lv_palette_main(LV_PALETTE_RED), 0);
     lv_obj_t *icon = lv_label_create(float_btn);
-    lv_label_set_text(icon, LV_SYMBOL_LEFT); // Puedes usar LV_SYMBOL_LEFT o un texto como "Main"
+    lv_label_set_text(icon, LV_SYMBOL_HOME); 
     lv_obj_center(icon);
     lv_obj_add_event_cb(float_btn, go_to_main_screen_from_config_cb, LV_EVENT_CLICKED, NULL);
 }
@@ -2419,6 +2419,7 @@ void create_main_screen(lv_obj_t *parent) {
                     
                     // Crea el "item" para el producto
                     lv_obj_t *item = lv_obj_create(exhibitor_panel);
+                    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
                     lv_obj_set_size(item, 120, 100);
                     lv_obj_set_style_bg_color(item, lv_palette_main(LV_PALETTE_BLUE), 0);
                     // Agrega el callback para el toque del item
