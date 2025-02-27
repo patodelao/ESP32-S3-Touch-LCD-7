@@ -170,6 +170,11 @@ static lv_obj_t *main_page;
 static lv_obj_t *float_btn_add;
 static lv_obj_t *float_btn_del;
 static lv_obj_t *float_btn_del_all;
+static lv_obj_t *save_btn; 
+
+static lv_obj_t *main_menu_page = NULL;   // Página principal del lv_menu de productos
+static lv_obj_t *products_footer = NULL;  // Contenedor que agrupa los botones del footer
+
 
 // -------------------------
 // DECLARACIONES DE FUNCIONES USADAS
@@ -442,7 +447,7 @@ static void wifi_scan_task(void *param) {
         .show_hidden = true,
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time.active.min = 50,
-        .scan_time.active.max = 500,
+        .scan_time.active.max = 700,
     };
 
     esp_err_t err = esp_wifi_scan_start(&scan_config, false);
@@ -453,7 +458,7 @@ static void wifi_scan_task(void *param) {
     }
     ESP_ERROR_CHECK(err);
 
-    vTaskDelay(pdMS_TO_TICKS(500)); // Espera 0.5 segundo
+    vTaskDelay(pdMS_TO_TICKS(700)); // Espera 0.5 segundo
 
     esp_wifi_scan_stop();
     ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
@@ -1574,6 +1579,28 @@ static void create_new_product(lv_event_t *e) {
     ESP_LOGI(TAG, "New product created. New count: %lu", cont_index);
 }
 
+// Callback para detectar cambio de página en el lv_menu
+static void menu_page_changed_event_cb(lv_event_t *e) {
+    lv_obj_t *menu_obj = lv_event_get_target(e);
+    lv_obj_t *current_page = lv_menu_get_cur_main_page(menu_obj);
+    
+    if(current_page == main_page) {
+        // Página principal: mostrar botones
+        if(float_btn_add) lv_obj_clear_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+        if(float_btn_del) lv_obj_clear_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+        if(float_btn_del_all) lv_obj_clear_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+        if(save_btn) lv_obj_clear_flag(save_btn, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        // Sub-página: ocultar botones
+        if(float_btn_add) lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+        if(float_btn_del) lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+        if(float_btn_del_all) lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+        if(save_btn) lv_obj_add_flag(save_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+
+
 // Crea la parte de configuración de productos en una pestaña
 static void product_config_in_tab(lv_obj_t *parent)
 {
@@ -1602,13 +1629,15 @@ static void product_config_in_tab(lv_obj_t *parent)
     lv_label_set_text(title_label, "Configuración de productos:");
     lv_obj_align(title_label, LV_ALIGN_CENTER, 0, 0);
 
-    // Menú de productos
+    // Contenedor de menú de productos
     lv_obj_t *menu_container = lv_obj_create(config_container);
     ESP_LOGI(TAG, "Menu container created");
     lv_obj_set_size(menu_container, 730, 350);
     lv_obj_align(menu_container, LV_ALIGN_TOP_MID, 0, 50);
     lv_obj_set_scroll_dir(menu_container, LV_DIR_VER);
     lv_obj_clear_flag(menu_container, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Crear menú de productos
     menu = lv_menu_create(menu_container);
     ESP_LOGI(TAG, "Menu created for products");
     lv_obj_clear_flag(menu, LV_OBJ_FLAG_SCROLLABLE);
@@ -1616,7 +1645,14 @@ static void product_config_in_tab(lv_obj_t *parent)
     lv_obj_align(menu, LV_ALIGN_TOP_MID, 0, 0);
     main_page = lv_menu_page_create(menu, NULL);
     lv_menu_set_page(menu, main_page);
+
+    main_menu_page = main_page;  // Asignar la página principal global
+
     load_products_for_config();
+
+
+    // Registrar el callback de cambio de página
+    lv_obj_add_event_cb(menu, menu_page_changed_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     // Footer con botones
     lv_obj_t *footer = lv_obj_create(config_container);
@@ -1624,31 +1660,36 @@ static void product_config_in_tab(lv_obj_t *parent)
     ESP_LOGI(TAG, "Footer created for product configuration");
     lv_obj_set_size(footer, 730, 62);
     lv_obj_align(footer, LV_ALIGN_BOTTOM_MID, 0, 0);
+
     float_btn_add = lv_btn_create(footer);
     lv_obj_set_size(float_btn_add, 50, 50);
     lv_obj_align(float_btn_add, LV_ALIGN_RIGHT_MID, -50, 0);
     lv_obj_add_event_cb(float_btn_add, create_new_product, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_add, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_add, LV_SYMBOL_PLUS, 0);
+
     float_btn_del = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del, 50, 50);
     lv_obj_align(float_btn_del, LV_ALIGN_RIGHT_MID, -120, 0);
     lv_obj_add_event_cb(float_btn_del, delete_last_item, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del, LV_SYMBOL_MINUS, 0);
+
     float_btn_del_all = lv_btn_create(footer);
     lv_obj_set_size(float_btn_del_all, 50, 50);
     lv_obj_align(float_btn_del_all, LV_ALIGN_RIGHT_MID, -170, 0);
     lv_obj_add_event_cb(float_btn_del_all, delete_all_items, LV_EVENT_CLICKED, NULL);
     lv_obj_set_style_radius(float_btn_del_all, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_img_src(float_btn_del_all, LV_SYMBOL_TRASH, 0);
-    lv_obj_t *save_btn = lv_btn_create(footer);
+
+    save_btn = lv_btn_create(footer);
     lv_obj_set_size(save_btn, 40, 40);
     lv_obj_align(save_btn, LV_ALIGN_CENTER, 0, 0);
     lv_obj_t *btn_label = lv_label_create(save_btn);
     lv_obj_align(btn_label, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(btn_label, LV_SYMBOL_SAVE);
     lv_obj_add_event_cb(save_btn, save_objects_btn, LV_EVENT_CLICKED, NULL);
+
     ESP_LOGI(TAG, "Product configuration UI created successfully");
 }
 
@@ -2300,7 +2341,7 @@ void create_general_config_screen(lv_obj_t *parent) {
     lv_obj_t *tab1 = lv_tabview_add_tab(tabview,"   " LV_SYMBOL_WIFI "\nConfig.\nWiFi");
     lv_obj_t *tab2 = lv_tabview_add_tab(tabview,"    " LV_SYMBOL_LIST "\nConfig.\nProducts");
     lv_obj_t *tab3 = lv_tabview_add_tab(tabview,"    ****\nCambiar\nClave\nadmin.");
-    lv_obj_t *tab4 = lv_tabview_add_tab(tabview, "Operation\ncmd\nPOS");
+    lv_obj_t *tab4 = lv_tabview_add_tab(tabview, "POS cmd\n\n init\npoll\nloadkeys");
 
     /* --- TAB 1: UI de Configuración WiFi --- */
     lv_obj_t *container1 = lv_obj_create(tab1);
@@ -2525,6 +2566,10 @@ static void product_item_event_cb(lv_event_t * e) {
         }
         lv_obj_set_style_bg_color(item, lv_color_make(0, 255, 0), LV_PART_MAIN);
     }
+    // Al cargar la sub-página, ocultar los botones del footer
+    if (float_btn_add) lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
+    if (float_btn_del) lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
+    if (float_btn_del_all) lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
 }
 
 
