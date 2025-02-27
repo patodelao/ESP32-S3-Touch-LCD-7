@@ -1,4 +1,4 @@
-/* * Data converted from C:/Users/patricio.delao/Documents/tval_code/ESP32-S3-Touch-LCD-7/esp32_waterMachine/build/esp-idf/mbedtls/x509_crt_bundle
+/* * Data converted from C:/Users/alons/Desktop/tval_codes/ESP32-S3-Touch-LCD-7/esp32_waterMachine/build/esp-idf/mbedtls/x509_crt_bundle
  */
 .data
 #if !defined (__APPLE__) && !defined (__linux__)

@@ -88,7 +88,7 @@
 #define UART_NUM 2
 #define UART_TX_PIN 43
 #define UART_RX_PIN 44
-#define UART_BUFFER_SIZE 1024
+#define UART_BUFFER_SIZE 2048
 #define MAX_RETRIES_ACK 3
 #define ACK_TIMEOUT_MS 1000
 #define STX 0x02
@@ -148,6 +148,10 @@ static QueueHandle_t command_queue = NULL; // Cola para comandos recibidos
 
 // --------------------------------------------------------------------
 
+typedef struct {
+    size_t length;
+    uint8_t data[UART_BUFFER_SIZE];
+} uart_message_t;
 
 
 
@@ -169,6 +173,8 @@ static lv_obj_t *float_btn_del_all;
 // -------------------------
 // DECLARACIONES DE FUNCIONES USADAS
 // -------------------------
+int process_uart_data(const uint8_t *data, size_t length);
+void uart_send_command(const uint8_t *command, size_t length);
 static void process_received_command(const uint8_t *command, size_t length);
 static bool verify_lrc_rx(const uint8_t *data, size_t length);
 uint8_t calculate_lrc(const uint8_t *data, size_t length);
@@ -217,7 +223,9 @@ static bool load_config_password_from_nvs(char *buffer, size_t size);
 
 
 
-
+void uart_send_command(const uint8_t *command, size_t length) {
+    uart_write_bytes(UART_NUM, (const char *)command, length);
+}
 
 
 
@@ -663,45 +671,92 @@ static void init_uart(void) {
 
     // Crear colas
     ack_queue = xQueueCreate(5, sizeof(uint8_t)); 
-    command_queue = xQueueCreate(10, UART_BUFFER_SIZE);
+    command_queue = xQueueCreate(10, sizeof(uart_message_t));
 
     if (!command_queue || !ack_queue) {
         printf("Error: No se pudo crear las colas.\n");
     }
 }
 
+int process_uart_data(const uint8_t *data, size_t length) {
+    uint8_t temp_message[UART_BUFFER_SIZE] = {0};
+    size_t temp_index = 0;
+    char command[5] = {0};
+    // Se asume que se reciben ACK/NAK de forma aislada:
+    for (size_t i = 0; i < length; i++) {
+        if (data[i] == 0x06) return 2;
+        else if (data[i] == 0x15) return 3;
+        
+        // Al detectar STX, reiniciamos el buffer (ahora incluiremos el STX)
+        if (data[i] == STX) {
+            temp_index = 0;
+        }
+        // Almacena siempre el byte actual (esto incluye STX y, posteriormente, ETX)
+        if (temp_index < sizeof(temp_message) - 1) {
+            temp_message[temp_index++] = data[i];
+        } else {
+            return 9; // Buffer lleno, comando inválido
+        }
+        // Si el byte actual es ETX, asumimos que el siguiente byte es el LRC
+        if (data[i] == ETX) {
+            if (i + 1 >= length) return 10; // LRC fuera de rango
+            // Aquí se calcula el LRC sobre todo el mensaje acumulado (incluyendo STX y ETX)
+            uint8_t lrc_calculated = calculate_lrc(temp_message, temp_index);
+            uint8_t lrc_received = data[i + 1];
 
-void uart_send_command(const uint8_t *command, size_t length) {
-    uart_write_bytes(UART_NUM, (const char *)command, length);
+            //uart_write_bytes(UART_NUM, (const char *)temp_message, temp_index);
+            //uart_write_bytes(UART_NUM, (const char *)&lrc_received, 1);
+            //uart_write_bytes(UART_NUM, (const char *)&lrc_calculated, 1);
+
+            if (lrc_calculated != lrc_received) return 0; // LRC incorrecto
+            temp_message[temp_index] = '\0'; // Terminación nula, si fuera necesario para parsear
+            // Aquí podrías hacer parseo adicional (por ejemplo, separar campos con strtok)
+            return 1; // Comando procesado correctamente
+        }
+    }
+    return 0; // No se procesó ningún comando completo
 }
 
-
 static void uart_RX_task(void *param) {
-    uint8_t data_buffer[UART_BUFFER_SIZE];
-    size_t bytes_read = 0;
-
+    static uint8_t rx_buffer[UART_BUFFER_SIZE];
+    static size_t rx_index = 0;
+    uint8_t byte;
     while (1) {
-        uart_event_t event;
-        if (xQueueReceive(uart_event_queue, &event, portMAX_DELAY)) {
-            switch (event.type) {
-                case UART_DATA:
-                    bytes_read = uart_read_bytes(UART_NUM, data_buffer, sizeof(data_buffer), pdMS_TO_TICKS(10));
-                    if (bytes_read > 0) {
-                        for (size_t i = 0; i < bytes_read; i++) {
-                            // Verificar ACK o NAK
-                            if (data_buffer[i] == 0x06 || data_buffer[i] == 0x15) {
-                                xQueueSend(ack_queue, &data_buffer[i], portMAX_DELAY);
-                            }
-                        }
+        if (uart_read_bytes(UART_NUM, &byte, 1, pdMS_TO_TICKS(10)) > 0) {
 
-                        // Enviar el mensaje completo a la cola de procesamiento
-                        xQueueSend(command_queue, data_buffer, pdMS_TO_TICKS(100));
-                    }
-                    break;
+            // Reenvía el byte recibido (eco inmediato, opcional)
+            //uart_write_bytes(UART_NUM, &byte, 1);
 
-                default:
-                    printf("Evento UART no manejado: %d\n", event.type);
-                    break;
+            // Si se detecta STX, reinicia el buffer
+            if (byte == STX) {
+                rx_index = 0;
+            }
+            // Almacena el byte en el buffer
+            if (rx_index < UART_BUFFER_SIZE) {
+                rx_buffer[rx_index++] = byte;
+            }
+            // Cuando se detecta ETX y hay espacio para el LRC...
+            if (byte == ETX && rx_index < UART_BUFFER_SIZE) {
+                // Intentar leer el siguiente byte (el LRC)
+                if (uart_read_bytes(UART_NUM, &byte, 1, pdMS_TO_TICKS(10)) > 0) {
+                    rx_buffer[rx_index++] = byte; // Agrega el LRC
+                }
+                // Ahora reenvía el mensaje completo, que incluye STX, datos, ETX y LRC
+                //uart_write_bytes(UART_NUM, rx_buffer, rx_index);
+
+                // Procesa el comando completo
+                int result = process_uart_data(rx_buffer, rx_index);
+                if (result == 1) {
+                    uint8_t ack = 0x06;
+                    uart_send_command(&ack, 1);
+                } else {
+                    uint8_t nak = 0x15;
+                    uart_send_command(&nak, 1);
+                }
+                rx_index = 0;
+            }
+            if (rx_index >= UART_BUFFER_SIZE) {
+                rx_index = 0;
             }
         }
     }
@@ -712,59 +767,69 @@ static void uart_RX_task(void *param) {
 // Procesa el comando recibido y responde con ACK o NAK
 static void process_received_command(const uint8_t *command, size_t length) {
     if (verify_lrc_rx(command, length)) {
-        printf("Comando válido. Enviando ACK.\n");
+        ESP_LOGI(TAG, "Comando válido. Enviando ACK.");
         uint8_t ack = 0x06; // ACK
         uart_send_command(&ack, 1);
     } else {
-        printf("Comando inválido. Enviando NAK.\n");
+        ESP_LOGE(TAG, "Comando inválido. Enviando NAK.");
         uint8_t nak = 0x15; // NAK
         uart_send_command(&nak, 1);
     }
 }
 
-static void command_processing_task(void *param) {
-    uint8_t command_buffer[UART_BUFFER_SIZE];
 
-    while (1) {
-        if (xQueueReceive(command_queue, command_buffer, portMAX_DELAY)) {
-            size_t length = strlen((char *)command_buffer); // Longitud del comando
-            printf("Procesando comando: %s\n", command_buffer);
-            process_received_command(command_buffer, length);
+static void command_processing_task(void *param) {
+    uart_message_t msg;
+    while (xQueueReceive(command_queue, &msg, portMAX_DELAY)) {
+        printf("Procesando comando (longitud: %d): ", msg.length);
+        for (size_t i = 0; i < msg.length; i++) {
+            printf("%02X ", msg.data[i]);
         }
+        printf("\n");
+        process_received_command(msg.data, msg.length);
     }
 }
 
 
 
 
-static void wait_for_ack_task(void *param) {
 
+static void wait_for_ack_task(void *param) {
     struct CommandParams {
         uint8_t *command;
         size_t length;
     } *params = (struct CommandParams *)param;
-    uint8_t *command = params->command;
-    size_t length = params->length;
 
-    for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        printf("Intento %d: Enviando comando...\n", attempt);
-        uart_write_bytes(UART_NUM, (const char *)command, length);
+    uint8_t received_byte;
+    bool ack_received = false;
 
-        uint8_t received_byte;
+    for (int attempt = 1; attempt <= MAX_RETRIES_ACK; attempt++) {
+        ESP_LOGI(TAG, "Intento %d: Enviando comando con ACK", attempt);
+        uart_write_bytes(UART_NUM, (const char *)params->command, params->length);
+
+        // Esperar respuesta
         if (xQueueReceive(ack_queue, &received_byte, pdMS_TO_TICKS(ACK_TIMEOUT_MS))) {
-            if (received_byte == 0x06) {
-                printf("ACK recibido.\n");
+            if (received_byte == 0x06) { // ACK
+                ESP_LOGI(TAG, "ACK recibido.");
+                ack_received = true;
                 break;
-            } else if (received_byte == 0x15) {
-                printf("NAK recibido. Reintentando...\n");
+            } else if (received_byte == 0x15) { // NAK
+                ESP_LOGW(TAG, "NAK recibido, reintentando...");
             }
         } else {
-            printf("Timeout esperando ACK.\n");
+            ESP_LOGW(TAG, "Timeout esperando ACK.");
         }
     }
 
+    // Liberar memoria del comando después de procesarlo
     free(params->command);
     free(params);
+
+    // Si no se recibió ACK, limpiar la cola de ACK para evitar bloqueos
+    if (!ack_received) {
+        xQueueReset(ack_queue);
+    }
+
     vTaskDelete(NULL);
 }
 
@@ -1068,38 +1133,73 @@ uint8_t calculate_lrc(const uint8_t *data, size_t length) {
 static bool verify_lrc(const uint8_t *data, size_t length) {
     if (length < 3) return false; // Debe tener al menos STX, ETX y LRC
 
+
+
     uint8_t calculated_lrc = calculate_lrc(data + 1, length - 3); // Excluye STX y LRC
     uint8_t received_lrc = data[length - 1];
 
     return calculated_lrc == received_lrc;
 }
 
-static bool verify_lrc_rx(const uint8_t *data, size_t length) {
-    if (length < 3) return false; // Debe tener al menos STX, ETX y LRC
 
-    uint8_t calculated_lrc = calculate_lrc(data, length - 1); // Incluye STX y LRC
-    uint8_t received_lrc = data[length - 1];
+void send_lrc_via_uart(uint8_t calculated_lrc) {
+    char buffer[16];  // Buffer para la conversión
+    int len = snprintf(buffer, sizeof(buffer), "LRC: %02X\n", calculated_lrc);
+    uart_write_bytes(UART_NUM, buffer, len);
+}
+
+static bool verify_lrc_rx(const uint8_t *data, size_t length) {
+    if (length < 4) return false; // STX + DATA + ETX + LRC
+
+    ESP_LOGI(TAG, "Mensaje recibido para LRC:");
+    for (size_t i = 0; i < length; i++) {
+        printf("%02X ", data[i]);
+    }
+    printf("\n");
+
+    // 🔴 Buscar ETX y definir la longitud real del mensaje
+    size_t valid_length = 0;
+    for (size_t i = 1; i < length; i++) {
+        if (data[i] == ETX) {
+            valid_length = i + 2; // Incluir ETX + LRC
+            break;
+        }
+    }
+
+    if (valid_length == 0 || valid_length > length) {
+        ESP_LOGE(TAG, "No se encontró ETX en la longitud esperada.");
+        return false;
+    }
+
+    // 🔴 Calcular LRC solo sobre los datos (excluyendo STX y ETX)
+    uint8_t calculated_lrc = calculate_lrc(data + 1, valid_length - 3); 
+    uint8_t received_lrc = data[valid_length - 1];
+
+    ESP_LOGI(TAG, "LRC Calculado: %02X, LRC Recibido: %02X", calculated_lrc, received_lrc);
 
     return calculated_lrc == received_lrc;
 }
 
 
+
+
+
+
 void create_transaction_command(const char *monto) {
-    char monto_formateado[10];
-    memset(monto_formateado, '0', 9);
-    monto_formateado[9] = '\0';
+    char monto_formateado[10] = "000000000";
     int len_monto = strlen(monto);
     memmove(monto_formateado + (9 - len_monto), monto, len_monto);
 
     const char *codigo_cmd = "0200";
-    const char *ticket_number = "2189aaA987321";
-    const char *campo_impresion = "0";
-    const char *enviar_msj = "0";
+    const char *ticket_number = "ABC123";
+    const char *campo_impresion = "1";
+    const char *enviar_msj = "1";
 
     char command[256];
-    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", codigo_cmd, monto_formateado, ticket_number, campo_impresion, enviar_msj);
+    snprintf(command, sizeof(command), "%s|%s|%s|%s|%s", 
+             codigo_cmd, monto_formateado, ticket_number, campo_impresion, enviar_msj);
 
-    size_t command_length = strlen(command) + 3;
+    size_t command_length = strlen(command) + 3; // STX + DATA + ETX + LRC
     uint8_t *formatted_command = malloc(command_length);
 
     if (!formatted_command) {
@@ -1113,22 +1213,20 @@ void create_transaction_command(const char *monto) {
     index += strlen(command);
     formatted_command[index++] = ETX;
 
-    uint8_t lrc = calculate_lrc(formatted_command + 1, index - 1);
+    // Calcular LRC sobre todo el mensaje (incluyendo STX y ETX)
+    uint8_t lrc = calculate_lrc(formatted_command+1, index-1);
     formatted_command[index++] = lrc;
 
-    ESP_LOGI(TAG, "Mensaje construido dinámicamente:");
+    // Log para ver el mensaje antes de enviarlo
+    ESP_LOGI(TAG, "Mensaje Enviado:");
     for (size_t i = 0; i < index; i++) {
         printf("%02X ", formatted_command[i]);
     }
-    printf("\nLRC Calculado: %02X\n", lrc);
+    printf("\n");
 
     send_command_with_ack(formatted_command, index);
-    //uart_send_command(formatted_command, index);
-
     free(formatted_command);
 }
-
-
 
 
 
@@ -1183,7 +1281,7 @@ void wifi_service_init(void) {
     ESP_ERROR_CHECK(esp_wifi_start());
 
     wifi_initialized = true;
-    ESP_LOGI(TAG, "Servicio Wi‑Fi inicializado.");
+    ESP_LOGI(TAG, "Servicio Wi-Fi inicializado.");
 }
 
 
@@ -1265,7 +1363,7 @@ void create_wifi_settings_widget(lv_obj_t *parent) {
 
     
     // Asignamos un string de prueba  de wifi_password para que aparezca ya escrito
-    lv_textarea_set_text(password_textarea, "111111111111111");
+    //lv_textarea_set_text(password_textarea, "111111111111111");
 
     // Botón para escanear redes WiFi
     lv_obj_t *scan_btn = lv_btn_create(container);
