@@ -146,6 +146,7 @@ static QueueHandle_t command_queue = NULL; // Cola para comandos recibidos
 
 
 
+
 // --------------------------------------------------------------------
 
 typedef struct {
@@ -160,6 +161,8 @@ static lv_obj_t *config_password_dialog = NULL;     // Diálogo para cambiar la 
 
 
 
+// Variable global para llevar el contador de tickets
+static unsigned int ticket_counter = 0;
 
 // Variables para la configuración de productos
 #define MAX_ITEMS 10
@@ -1196,7 +1199,22 @@ static bool verify_lrc_rx(const uint8_t *data, size_t length) {
 }
 
 
+// Función para generar el ticket con formato "AAAA/MM/NNNN"
+void generate_ticket_number(char *ticket, size_t size) {
+    time_t now = simulated_epoch;
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
 
+    int year = timeinfo.tm_year + 1900;
+    int month = timeinfo.tm_mon + 1;
+
+    // Incrementa el contador y nos aseguramos de que siempre sean 4 dígitos.
+    ticket_counter++;
+    unsigned int counter = ticket_counter % 10000; // Si se desea reiniciar al llegar a 9999
+
+    // Formatea el string: año con 4 dígitos, mes con 2 dígitos y contador con 4 dígitos
+    snprintf(ticket, size, "%04d/%02d/%04u", year, month, counter);
+}
 
 
 
@@ -1206,7 +1224,11 @@ void create_transaction_command(const char *monto) {
     memmove(monto_formateado + (9 - len_monto), monto, len_monto);
 
     const char *codigo_cmd = "0200";
-    const char *ticket_number = "ABC123";
+
+    // Generar el número de ticket dinámicamente
+    char ticket_number[16];  // Aseguramos que haya suficiente espacio para "AAAA/MM/NNNN"
+    generate_ticket_number(ticket_number, sizeof(ticket_number));
+    
     const char *campo_impresion = "1";
     const char *enviar_msj = "1";
 
