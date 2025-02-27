@@ -208,7 +208,7 @@ static void create_new_product(lv_event_t *e);
 static void product_config_in_tab(lv_obj_t *parent);
 void save_products_to_nvs(void);
 void load_products_for_config(void);
-void create_general_config_screen_in_content(lv_obj_t *parent);
+void create_general_config_screen(lv_obj_t *parent);
 void create_main_screen(lv_obj_t *parent);
 void switch_screen(void (*create_screen)(lv_obj_t *parent));
 static bool verify_lrc(const uint8_t *data, size_t length);
@@ -270,7 +270,7 @@ static void buy_button_event_cb(lv_event_t *e) {
     lv_obj_t *exhibitor_panel = lv_event_get_user_data(e);
     generate_transaction_from_selected_product(exhibitor_panel);
 
-    
+
     // Iterar sobre los items del panel y deseleccionar (cambiar a azul) los que estén en verde.
     uint32_t child_count = lv_obj_get_child_cnt(exhibitor_panel);
     for (uint32_t i = 0; i < child_count; i++) {
@@ -1959,7 +1959,7 @@ static void confirm_password_event_cb(lv_event_t *e) {
         }
         lv_obj_del(dialog);
         config_password_dialog = NULL;
-        switch_screen(create_general_config_screen_in_content);
+        switch_screen(create_general_config_screen);
     } else {
         lv_obj_t *error_msg = lv_msgbox_create(NULL, "Error", "Contraseña incorrecta.", NULL, true);
         lv_obj_center(error_msg);
@@ -2190,6 +2190,37 @@ static void create_password_change_menu(lv_obj_t *parent) {
 
 
 
+static void send_init_command(lv_event_t *e) {
+    uint8_t init_command[] = {0x02, 0x30, 0x30, 0x37, 0x30, 0x03, 0x04}; // Comando INIT
+    
+    printf("Enviando comando INIT...\n");
+    send_command_with_ack(init_command, sizeof(init_command));
+}
+
+static void send_init_response(lv_event_t *e) {
+    uint8_t init_response[] = {0x02, 0x30, 0x30, 0x37, 0x30, 0x03, 0x0B}; // Comando INIT RESP
+    
+    printf("Enviando comando INIT RESP...\n");
+    send_command_with_ack(init_response, sizeof(init_response));
+}
+
+
+static void send_polling_command(lv_event_t *e) {
+    uint8_t polling_command[] = {0x02, 0x30, 0x31, 0x30, 0x30, 0x03, 0x02};     // Comando POLLING
+
+    printf("Enviando comando POLLING...\n");
+    send_command_with_ack(polling_command, sizeof(polling_command));
+}
+
+
+static void send_loadkeys_comand(lv_event_t *e) {
+    uint8_t loadkeys_command[] = {0x02, '0', '8', '0', '0', 0x03};
+    loadkeys_command[5] = calculate_lrc(loadkeys_command + 1, 5);
+
+    printf("Enviando comando LOAD KEYS...\n");
+    //uart_write_bytes(UART_NUM, (const char *)loadkeys_command, sizeof(loadkeys_command));
+    send_command_with_ack(loadkeys_command, sizeof(loadkeys_command));
+}
 
 
 
@@ -2200,16 +2231,53 @@ static void create_password_change_menu(lv_obj_t *parent) {
 
 
 
+// Función para crear el contenido del cuarto tab: "Operation\ncmd\nPOS"
+static void create_operation_cmd_pos_tab(lv_obj_t *parent) {
+    // Crear un contenedor que ocupe el espacio del tab y centrarlo
+    lv_obj_t *container = lv_obj_create(parent);
+    lv_obj_set_size(container, 500, 300);
+    lv_obj_center(container);
+    lv_obj_clear_flag(container, LV_OBJ_FLAG_SCROLLABLE);
+    
+    // Configurar el layout tipo flex para distribuir los botones en fila y centrarlos
+    lv_obj_set_layout(container, LV_LAYOUT_FLEX);
+    lv_obj_set_style_flex_flow(container, LV_FLEX_FLOW_ROW, 0);
+    // Centrar los elementos: en el eje principal (horizontal) y en el eje cruzado (vertical)
+    lv_obj_set_flex_align(container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_all(container, 10, 0);
 
+    // Botón: POLLING
+    lv_obj_t *btn_polling = lv_btn_create(container);
+    lv_obj_set_size(btn_polling, 100, 50);
+    lv_obj_add_event_cb(btn_polling, send_polling_command, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_polling = lv_label_create(btn_polling);
+    lv_label_set_text(label_polling, "Polling");
+    lv_obj_center(label_polling);
 
+    // Botón: INIT
+    lv_obj_t *btn_init = lv_btn_create(container);
+    lv_obj_set_size(btn_init, 100, 50);
+    lv_obj_add_event_cb(btn_init, send_init_command, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_init = lv_label_create(btn_init);
+    lv_label_set_text(label_init, "Init");
+    lv_obj_center(label_init);
 
+    // Botón: INIT RESP
+    lv_obj_t *btn_init_resp = lv_btn_create(container);
+    lv_obj_set_size(btn_init_resp, 100, 50);
+    lv_obj_add_event_cb(btn_init_resp, send_init_response, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_init_resp = lv_label_create(btn_init_resp);
+    lv_label_set_text(label_init_resp, "Init Resp");
+    lv_obj_center(label_init_resp);
 
-
-
-
-
-
-
+    // Botón: LOAD KEYS
+    lv_obj_t *btn_loadkeys = lv_btn_create(container);
+    lv_obj_set_size(btn_loadkeys, 100, 50);
+    lv_obj_add_event_cb(btn_loadkeys, send_loadkeys_comand, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *label_loadkeys = lv_label_create(btn_loadkeys);
+    lv_label_set_text(label_loadkeys, "Load Keys");
+    lv_obj_center(label_loadkeys);
+}
 
 
 
@@ -2220,7 +2288,7 @@ static void create_password_change_menu(lv_obj_t *parent) {
 
 
 // Función para crear la pantalla de configuración dentro del contenedor "content"
-void create_general_config_screen_in_content(lv_obj_t *parent) {
+void create_general_config_screen(lv_obj_t *parent) {
     ESP_LOGI(TAG, "Creating general configuration screen in content");
     // Se crea el tabview dentro del contenedor padre (global_content)
     lv_obj_t *tabview = lv_tabview_create(parent, LV_DIR_LEFT, 70);
@@ -2232,6 +2300,7 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     lv_obj_t *tab1 = lv_tabview_add_tab(tabview,"   " LV_SYMBOL_WIFI "\nConfig.\nWiFi");
     lv_obj_t *tab2 = lv_tabview_add_tab(tabview,"    " LV_SYMBOL_LIST "\nConfig.\nProducts");
     lv_obj_t *tab3 = lv_tabview_add_tab(tabview,"    ****\nCambiar\nClave\nadmin.");
+    lv_obj_t *tab4 = lv_tabview_add_tab(tabview, "Operation\ncmd\nPOS");
 
     /* --- TAB 1: UI de Configuración WiFi --- */
     lv_obj_t *container1 = lv_obj_create(tab1);
@@ -2250,34 +2319,10 @@ void create_general_config_screen_in_content(lv_obj_t *parent) {
     create_password_change_menu(tab3);
 
 
+    // --- TAB 4: Operation cmd POS ---
+    create_operation_cmd_pos_tab(tab4);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-    /*
-    lv_obj_t *container3 = lv_obj_create(tab3);
-    lv_obj_set_size(container3, lv_obj_get_width(tab3), lv_obj_get_height(tab3));
-    lv_obj_set_align(container3, LV_ALIGN_CENTER);
-    lv_obj_set_style_bg_color(container3, lv_color_hex(0x00FF00), 0); // Fondo verde
-    lv_obj_clear_flag(container3, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_t *label3 = lv_label_create(container3);
-    lv_label_set_text(label3, "Contenido de Tab 3");
-    lv_obj_center(label3); */
-
-
-
-
-
+ 
 
     // --- Botón flotante para regresar al main_screen ---
     lv_obj_t *float_btn = lv_btn_create(parent);
