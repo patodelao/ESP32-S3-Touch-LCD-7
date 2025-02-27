@@ -2550,7 +2550,12 @@ static void update_clock_cb(lv_timer_t * timer) {
 
 static void product_item_event_cb(lv_event_t * e) {
     // Obtén el ítem que disparó el evento
-    lv_obj_t * item = lv_event_get_target(e);
+    lv_obj_t *item = lv_event_get_target(e);
+    if (!lv_obj_is_valid(item)){
+        ESP_LOGI(TAG, "Objeto no válido");
+        return;  // Si el objeto ya no es válido, salimos
+
+    }
     // Obtén el contenedor padre (el panel de productos)
     lv_obj_t * product_panel = lv_obj_get_parent(item);
     
@@ -2567,10 +2572,7 @@ static void product_item_event_cb(lv_event_t * e) {
         }
         lv_obj_set_style_bg_color(item, lv_color_make(0, 255, 0), LV_PART_MAIN);
     }
-    // Al cargar la sub-página, ocultar los botones del footer
-    if (float_btn_add) lv_obj_add_flag(float_btn_add, LV_OBJ_FLAG_HIDDEN);
-    if (float_btn_del) lv_obj_add_flag(float_btn_del, LV_OBJ_FLAG_HIDDEN);
-    if (float_btn_del_all) lv_obj_add_flag(float_btn_del_all, LV_OBJ_FLAG_HIDDEN);
+
 }
 
 
