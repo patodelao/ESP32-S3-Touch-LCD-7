@@ -269,10 +269,19 @@ void generate_transaction_from_selected_product(lv_obj_t *exhibitor_panel) {
 static void buy_button_event_cb(lv_event_t *e) {
     lv_obj_t *exhibitor_panel = lv_event_get_user_data(e);
     generate_transaction_from_selected_product(exhibitor_panel);
+
+    
+    // Iterar sobre los items del panel y deseleccionar (cambiar a azul) los que estén en verde.
+    uint32_t child_count = lv_obj_get_child_cnt(exhibitor_panel);
+    for (uint32_t i = 0; i < child_count; i++) {
+         lv_obj_t *item = lv_obj_get_child(exhibitor_panel, i);
+         lv_color_t current_color = lv_obj_get_style_bg_color(item, LV_PART_MAIN);
+         // Si el item está seleccionado (verde), se envía un evento para que se deseleccione.
+         if (current_color.full == lv_color_make(0, 255, 0).full) {
+             lv_event_send(item, LV_EVENT_CLICKED, NULL);
+         }
+    }
 }
-
-
-
 
 
 
@@ -1416,24 +1425,71 @@ static lv_obj_t *create_textarea(lv_obj_t *parent, const char *placeholder)
 static void save_button_event_cb(lv_event_t *e)
 {
     ESP_LOGI(TAG, "Save button pressed");
+    
+    // Obtener la sub-página asociada (user_data del botón guardar)
     lv_obj_t *sub_page = lv_event_get_user_data(e);
-    lv_obj_t *name_ta = lv_obj_get_child(sub_page, 0);
+    if(sub_page == NULL) {
+        ESP_LOGE(TAG, "Sub-page no válida");
+        return;
+    }
+
+    // Buscar el textarea cuyo placeholder sea "Nombre"
+    lv_obj_t *name_ta = NULL;
+    uint32_t count = lv_obj_get_child_cnt(sub_page);
+    for(uint32_t i = 0; i < count; i++) {
+        lv_obj_t *child = lv_obj_get_child(sub_page, i);
+        if(lv_obj_check_type(child, &lv_textarea_class)) {
+            const char *ph = lv_textarea_get_placeholder_text(child);
+            if(ph && strcmp(ph, "Nombre") == 0) {
+                name_ta = child;
+                break;
+            }
+        }
+    }
+    if(name_ta == NULL) {
+        ESP_LOGE(TAG, "No se encontró el campo de nombre");
+        return;
+    }
+    
+    // Obtener el texto del textarea
     const char *name = lv_textarea_get_text(name_ta);
-    if (strlen(name) == 0) {
-        ESP_LOGW(TAG, "Name is empty");
+    if(strlen(name) == 0) {
+        ESP_LOGW(TAG, "El nombre está vacío");
         printf("El nombre no puede estar vacío\n");
         return;
     }
+    
+    // Obtener el contenedor vinculado al sub_page (almacenado en su user_data)
     lv_obj_t *cont = lv_obj_get_user_data(sub_page);
-    if (cont == NULL) {
-        ESP_LOGE(TAG, "No container found for sub_page");
+    if(cont == NULL) {
+        ESP_LOGE(TAG, "No se encontró el contenedor vinculado a la sub-page");
         printf("Error: No se encontró el contenedor vinculado.\n");
         return;
     }
-    lv_obj_t *label = lv_obj_get_child(cont, 0);
+    
+    // Buscar el label dentro del contenedor que representa el nombre del producto
+    lv_obj_t *label = NULL;
+    uint32_t child_count = lv_obj_get_child_cnt(cont);
+    for (uint32_t i = 0; i < child_count; i++) {
+        lv_obj_t *child = lv_obj_get_child(cont, i);
+        if (lv_obj_check_type(child, &lv_label_class)) {
+            label = child;
+            break;
+        }
+    }
+    
+    
+    if(label == NULL) {
+        ESP_LOGE(TAG, "No se encontró el label dentro del contenedor");
+        return;
+    }
+    
+    // Actualizar el label con el nuevo nombre
     lv_label_set_text(label, name);
     ESP_LOGI(TAG, "Product name saved: %s", name);
 }
+
+
 
 // Elimina el último producto añadido
 static void delete_last_item(lv_event_t *e)
