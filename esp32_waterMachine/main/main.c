@@ -155,7 +155,8 @@ typedef struct {
 
 
 
-
+// Menu de general config 
+static lv_obj_t *config_password_dialog = NULL;     // Diálogo para cambiar la contraseña
 
 
 
@@ -1905,46 +1906,75 @@ static void confirm_password_event_cb(lv_event_t *e) {
         }
         // Elimina el diálogo y cambia de pantalla
         lv_obj_del(dialog);
+        config_password_dialog = NULL;
         switch_screen(create_general_config_screen_in_content);
     } else {
         lv_obj_t *error_msg = lv_msgbox_create(NULL, "Error", "Contraseña incorrecta.", NULL, true);
         lv_obj_center(error_msg);
     }
+}   
+
+
+
+
+// Callback para cerrar el diálogo
+static void close_config_password_dialog_cb(lv_event_t *e) {
+    lv_obj_t *dialog = lv_event_get_user_data(e);
+    if(lv_obj_is_valid(dialog)) {
+        lv_obj_del(dialog);
+    }
+    config_password_dialog = NULL;
 }
+
+
 
 // Función para mostrar el diálogo de contraseña
 static void show_config_password_dialog(void) {
-    // Crea un contenedor modal para el diálogo
-    lv_obj_t *dialog = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(dialog, 300, 200);
-    lv_obj_center(dialog);
-    lv_obj_set_style_bg_color(dialog, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_border_width(dialog, 2, 0);
+    // Si ya existe un diálogo, simplemente lo traemos al frente
+    if(config_password_dialog && lv_obj_is_valid(config_password_dialog)) {
+        lv_obj_move_foreground(config_password_dialog);
+        return;
+    }
+    
+    // Crear el diálogo y asignarlo a la variable global
+    config_password_dialog = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(config_password_dialog, 300, 200);
+    lv_obj_center(config_password_dialog);
+    lv_obj_set_style_bg_color(config_password_dialog, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_width(config_password_dialog, 2, 0);
+
+    // Agregar botón de "close" en la esquina superior derecha
+    lv_obj_t *btn_close = lv_btn_create(config_password_dialog);
+    lv_obj_set_size(btn_close, 30, 30);
+    lv_obj_align(btn_close, LV_ALIGN_TOP_RIGHT, -5, 5);
+    lv_obj_t *close_label = lv_label_create(btn_close);
+    lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
+    lv_obj_center(close_label);
+    lv_obj_add_event_cb(btn_close, close_config_password_dialog_cb, LV_EVENT_CLICKED, config_password_dialog);
 
     // Título del diálogo
-    lv_obj_t *title = lv_label_create(dialog);
+    lv_obj_t *title = lv_label_create(config_password_dialog);
     lv_label_set_text(title, "Ingrese contraseña:");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     // Campo de texto para la contraseña
-    lv_obj_t *password_ta = lv_textarea_create(dialog);
+    lv_obj_t *password_ta = lv_textarea_create(config_password_dialog);
     lv_textarea_set_placeholder_text(password_ta, "Contraseña");
     lv_textarea_set_one_line(password_ta, true);
     lv_textarea_set_password_mode(password_ta, true);
     lv_obj_set_width(password_ta, 250);
     lv_obj_align(password_ta, LV_ALIGN_CENTER, 0, -10);
-    // Se asocia el manejador de teclado (ya definido en el código)
     lv_obj_add_event_cb(password_ta, textarea_event_handler, LV_EVENT_FOCUSED, NULL);
 
     // Botón de confirmación
-    lv_obj_t *btn_confirm = lv_btn_create(dialog);
+    lv_obj_t *btn_confirm = lv_btn_create(config_password_dialog);
     lv_obj_set_size(btn_confirm, 100, 40);
     lv_obj_align(btn_confirm, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_obj_t *btn_label = lv_label_create(btn_confirm);
     lv_label_set_text(btn_label, "Confirmar");
     lv_obj_center(btn_label);
-    // Se asigna como user_data el diálogo para que el callback pueda eliminarlo en caso de éxito.
-    lv_obj_add_event_cb(btn_confirm, confirm_password_event_cb, LV_EVENT_CLICKED, dialog);
+    // Se pasa el diálogo como user_data para que el callback lo elimine
+    lv_obj_add_event_cb(btn_confirm, confirm_password_event_cb, LV_EVENT_CLICKED, config_password_dialog);
 }
 
 // Callback del botón de configuración general para mostrar el diálogo
