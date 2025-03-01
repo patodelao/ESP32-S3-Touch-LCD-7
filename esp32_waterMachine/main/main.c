@@ -1,8 +1,29 @@
-/*
- * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
+/**
+ * @file main.c
+ * @brief Aplicación principal para la máquina expendedora de agua basada en ESP32.
  *
- * SPDX-License-Identifier: CC0-1.0
+ * Este archivo implementa la lógica central del sistema, que integra varias funcionalidades clave:
+ *  - Gestión de productos: Configuración, almacenamiento (usando NVS) y edición de los productos disponibles,
+ *    con una interfaz gráfica desarrollada en LVGL.
+ *  - Conexión WiFi: Escaneo, conexión y manejo de eventos de red para conectar el dispositivo a una red inalámbrica,
+ *    con soporte para reintentos y notificación visual del estado.
+ *  - Comunicación con el POS : Intercambio de comandos mediante UART, incluyendo el manejo de mensajes con
+ *    verificación LRC para garantizar la integridad de la comunicación.
+ *  - Generación de transacciones: Formateo de montos y generación de tickets (en formato "AAAA/MM/NNNN") para identificar
+ *    de forma única cada operación.
+ *  - Menú de configuración: Interfaz para cambiar la contraseña de configuración y otros parámetros generales.
+ *  - Reloj y hora: Visualización de la hora actual y manejo de eventos para actualizar la hora en tiempo real.
+ * La aplicación se ejecuta sobre el ESP32-S3 utilizando FreeRTOS para la gestión de tareas y sincronización, y aprovecha
+ * los drivers de Espressif para interfaces como UART, I2C, LCD y el controlador táctil (GT911).
+ *
+ * @note Para mayor información, consulte la documentación completa.
+ * 
+ *
+ * @author 
+ *    Patricio de la O - Práctica profesional de Ing. Civil Electrónico - UTFSM - TVAL - 2025
  */
+
+
 #include <time.h> 
 #include <stdio.h>
 #include <string.h>
@@ -160,67 +181,82 @@
 
 
 /*----------------------------------------
- * VARIABLES GLOBALES ORDENADAS
+ * VARIABLES GLOBALES 
  *----------------------------------------*/
 static const char *TAG = "waterMachine";
 
 
-/* [1] Variables para la interfaz LVGL y UI general */
-static SemaphoreHandle_t lvgl_mux = NULL;           // Mutex para LVGL
-static lv_obj_t *global_header = NULL;              // Contenedor del header (barra de notificaciones)
-static lv_obj_t *global_content = NULL;             // Contenedor donde se inyectan las pantallas
-static lv_obj_t *global_clock_label = NULL;         // Label que muestra la hora
-static time_t simulated_epoch = 1739984400;         // Epoch simulado (2025-12-31 23:00:00)
-static lv_obj_t *pwd_change_dialog = NULL;          // Diálogo para cambiar la contraseña
+/** 
+ * @defgroup lvgl_ui_vars Variables para la interfaz LVGL y UI general
+ * @{
+ */
+static SemaphoreHandle_t lvgl_mux = NULL;           /**<    Mutex para LVGL */
+static lv_obj_t *global_header = NULL;              /**<    Contenedor del header (barra de notificaciones) */
+static lv_obj_t *global_content = NULL;             /**<    Contenedor donde se inyectan las pantallas */
+static lv_obj_t *global_clock_label = NULL;         /**<    Label que muestra la hora */
+static time_t simulated_epoch = 1739984400;         /**<    Epoch simulado (2025-12-31 23:00:00) */
+static lv_obj_t *pwd_change_dialog = NULL;          /**<    Diálogo para cambiar la contraseña */
+/** @} */
 
+/** 
+ * @defgroup wifi_vars Variables para la conexión WiFi
+ * @{
+ */
+static lv_obj_t *wifi_status_icon = NULL;           /**< Icono de estado de WiFi */
+static lv_obj_t *floating_msgbox = NULL;            /**< Mensaje flotante */
+static lv_obj_t *success_msgbox = NULL;             /**< Mensaje de éxito */
+static EventGroupHandle_t s_wifi_event_group;       /**< Grupo de eventos WiFi */
+static int s_retry_num = 0;                         /**< Contador de reintentos */
+static lv_obj_t *status_label;                      /**< Etiqueta para mostrar estado de conexión */
+static lv_obj_t *ssid_field;                        /**< Campo de texto para SSID */
+static lv_obj_t *password_field;                    /**< Campo de texto para contraseña WiFi */
+static lv_obj_t *keyboard;                          /**< Teclado virtual */
+static lv_obj_t *ssdropdown;                        /**< Dropdown para seleccionar redes WiFi */
+static TaskHandle_t wifi_task_handle = NULL;        /**< Handle para la tarea de conexión WiFi */
+static wifi_ap_record_t top_networks[MAX_NETWORKS]; /**< Arreglo de redes detectadas */
+static bool wifi_manual_disconnect = true;          /**< Indica si la desconexión fue manual */
+static bool sntp_initialized = false;               /**< Indica si SNTP ya fue inicializado */
+static char new_dropdown_options[256] = "";         /**< Buffer para nuevas opciones del dropdown */
+static volatile bool update_dropdown_flag = false;  /**< Flag para actualizar el dropdown */
+static bool wifi_initialized = false;               /**< Indica si el WiFi ya está inicializado */
+/** @} */
 
-/* [2] Variables para la conexión WiFi */
-static lv_obj_t *wifi_status_icon = NULL;           // Icono de estado de WiFi
-static lv_obj_t *floating_msgbox = NULL;            // Mensaje flotante
-static lv_obj_t *success_msgbox = NULL;             // Mensaje de éxito
-static EventGroupHandle_t s_wifi_event_group;       // Grupo de eventos WiFi
-static int s_retry_num = 0;                         // Contador de reintentos
-static lv_obj_t *status_label;                      // Etiqueta para mostrar estado de conexión
-static lv_obj_t *ssid_field;                        // Campo de texto para SSID
-static lv_obj_t *password_field;                    // Campo de texto para contraseña WiFi
-static lv_obj_t *keyboard;                          // Teclado virtual
-static lv_obj_t *ssdropdown;                        // Dropdown para seleccionar redes WiFi
-static TaskHandle_t wifi_task_handle = NULL;        // Handle para la tarea de conexión WiFi
-static wifi_ap_record_t top_networks[MAX_NETWORKS]; // Arreglo de redes detectadas
-static bool wifi_manual_disconnect = true;          // Indica si la desconexión fue manual
-static bool sntp_initialized = false;               // Indica si SNTP ya fue inicializado
-static char new_dropdown_options[256] = "";         // Buffer para nuevas opciones del dropdown
-static volatile bool update_dropdown_flag = false;  // Flag para actualizar el dropdown
-static bool wifi_initialized = false;
-
-
-/* [3] Variables para la comunicación UART */
-static QueueHandle_t uart_event_queue = NULL;       // Cola para eventos de UART
-static QueueHandle_t ack_queue = NULL;              // Cola para ACK/NAK
-static QueueHandle_t command_queue = NULL;          // Cola para comandos recibidos
+/** 
+ * @defgroup uart_vars Variables para la comunicación UART
+ * @{
+ */
+static QueueHandle_t uart_event_queue = NULL;       /**< Cola para eventos de UART */
+static QueueHandle_t ack_queue = NULL;              /**< Cola para ACK/NAK */
+static QueueHandle_t command_queue = NULL;          /**< Cola para comandos recibidos */
 typedef struct {
-    size_t length;
-    uint8_t data[UART_BUFFER_SIZE];
-} uart_message_t;                                   // Estructura para mensajes de UART
+    size_t length;                                 /**< Longitud del mensaje UART */
+    uint8_t data[UART_BUFFER_SIZE];                /**< Datos del mensaje UART */
+} uart_message_t;                                   /**< Estructura para mensajes de UART */
+/** @} */
 
-/* [4] Variables para la configuración y transacciones */
+/** 
+ * @defgroup config_trans_vars Variables para la configuración y transacciones
+ * @{
+ */
+static lv_obj_t *config_password_dialog = NULL;     /**< Diálogo para cambiar la contraseña de configuración */
+static unsigned int ticket_counter = 0;             /**< Contador global para tickets */
+/** @} */
 
-static lv_obj_t *config_password_dialog = NULL;     // Diálogo para cambiar la contraseña de configuración
-static unsigned int ticket_counter = 0;             // Contador global para tickets
-
-
-
-/* [5] Variables para la gestión de productos */
-static uint32_t cont_index = 0;                     // Índice de productos actuales
-lv_obj_t *cont_arr[MAX_ITEMS] = {0};                // Arreglo de contenedores para cada producto
-static lv_obj_t *menu;                              // Menú de productos
-static lv_obj_t *main_page;                         // Página principal del menú de productos
-static lv_obj_t *float_btn_add;                     // Botón flotante para agregar producto
-static lv_obj_t *float_btn_del;                     // Botón flotante para eliminar el último producto
-static lv_obj_t *float_btn_del_all;                 // Botón flotante para eliminar todos los productos
-static lv_obj_t *save_btn;                          // Botón para guardar cambios
-static lv_obj_t *main_menu_page = NULL;             // Página principal global del menú de productos
-static lv_obj_t *products_footer = NULL;            // Contenedor para los botones del footer en productos
+/** 
+ * @defgroup product_vars Variables para la gestión de productos
+ * @{
+ */
+static uint32_t cont_index = 0;                     /**< Índice de productos actuales */
+lv_obj_t *cont_arr[MAX_ITEMS] = {0};                /**< Arreglo de productos */
+static lv_obj_t *menu;                              /**< Menú de productos */
+static lv_obj_t *main_page;                         /**< Página principal del menú de productos */
+static lv_obj_t *float_btn_add;                     /**< Botón flotante para agregar producto */
+static lv_obj_t *float_btn_del;                     /**< Botón flotante para eliminar el último producto */
+static lv_obj_t *float_btn_del_all;                 /**< Botón flotante para eliminar todos los productos */
+static lv_obj_t *save_btn;                          /**< Botón para guardar cambios */
+static lv_obj_t *main_menu_page = NULL;             /**< Página principal global del menú de productos */
+static lv_obj_t *products_footer = NULL;            /**< Contenedor para los botones del footer en productos */
+/** @} */
 
 
 // ----------------------------------------
@@ -1467,9 +1503,9 @@ static void wifi_connect_task(void *param) {
 
     // Si ocurre un error durante la conexión, se muestra un mensaje de error en la UI.
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Error al conectar a la red Wi‑Fi: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Error al conectar a la red Wi-Fi: %s", esp_err_to_name(err));
         if (lvgl_lock(-1)) {
-            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo conectar a la red Wi‑Fi.", NULL, true);
+            lv_obj_t *msgbox = lv_msgbox_create(NULL, "Error", "No se pudo conectar a la red Wi-Fi.", NULL, true);
             lv_obj_center(msgbox);
             lvgl_unlock();
         }
@@ -1497,7 +1533,7 @@ static void wifi_connect_task(void *param) {
  *       - Agregar soporte para seleccionar canales específicos.
  */
 static void wifi_scan_task(void *param) {
-    ESP_LOGI(TAG, "Iniciando escaneo Wi‑Fi...");
+    ESP_LOGI(TAG, "Iniciando escaneo Wi-Fi...");
 
     uint16_t ap_count = 0;
     wifi_ap_record_t *ap_info = malloc(DEFAULT_SCAN_LIST_SIZE * sizeof(wifi_ap_record_t));
@@ -1520,7 +1556,7 @@ static void wifi_scan_task(void *param) {
     // Inicia el escaneo y, si el Wi‑Fi no está iniciado, lo inicia.
     esp_err_t err = esp_wifi_scan_start(&scan_config, false);
     if (err == ESP_ERR_WIFI_NOT_STARTED) {
-        ESP_LOGI(TAG, "Wi‑Fi no iniciado, iniciándolo...");
+        ESP_LOGI(TAG, "Wi-Fi no iniciado, iniciándolo...");
         ESP_ERROR_CHECK(esp_wifi_start());
         err = esp_wifi_scan_start(&scan_config, false);
     }
