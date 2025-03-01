@@ -29,77 +29,128 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
-
 // -------------------------
 // DEFINES Y CONFIGURACIONES
 // -------------------------
+
+
+/** @brief Pin de reloj (SCL) para el bus I2C maestro. */
 #define I2C_MASTER_SCL_IO           9
+/** @brief Pin de datos (SDA) para el bus I2C maestro. */
 #define I2C_MASTER_SDA_IO           8
+/** @brief Número del bus I2C. */
 #define I2C_MASTER_NUM              0
+/** @brief Frecuencia del bus I2C en Hz. */
 #define I2C_MASTER_FREQ_HZ          400000
+/** @brief Timeout del bus I2C en milisegundos. */
 #define I2C_MASTER_TIMEOUT_MS       1000
 
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT      BIT1
-#define WIFI_DISCONNECTED_BIT BIT2
-#define MAX_NETWORKS 5
-#define DEFAULT_SCAN_LIST_SIZE 10
-#define MAX_RETRIES 5
-
+/** @brief Bit que indica conexión WiFi. */
+#define WIFI_CONNECTED_BIT          BIT0
+/** @brief Bit que indica fallo en la conexión WiFi. */
+#define WIFI_FAIL_BIT               BIT1
+/** @brief Bit que indica desconexión WiFi. */
+#define WIFI_DISCONNECTED_BIT       BIT2
+/** @brief Número máximo de redes detectadas. */
+#define MAX_NETWORKS                5
+/** @brief Tamaño por defecto de la lista de redes escaneadas. */
+#define DEFAULT_SCAN_LIST_SIZE      10
+/** @brief Número máximo de reintentos para conexión WiFi. */
+#define MAX_RETRIES                 5
 
 // Configuración del LCD (ajusta los pines según tu panel)
+/** @brief Frecuencia del reloj del píxel del LCD en Hz. */
 #define LCD_PIXEL_CLOCK_HZ          (18 * 1000 * 1000)
+/** @brief Pin de control para la luz de fondo del LCD. */
 #define PIN_NUM_BK_LIGHT            -1
+/** @brief Pin de sincronización horizontal (HSYNC) del LCD. */
 #define PIN_NUM_HSYNC               46
+/** @brief Pin de sincronización vertical (VSYNC) del LCD. */
 #define PIN_NUM_VSYNC               3
+/** @brief Pin de habilitación de datos (DE) del LCD. */
 #define PIN_NUM_DE                  5
+/** @brief Pin de reloj de píxel (PCLK) del LCD. */
 #define PIN_NUM_PCLK                7
+/** @brief Pin de datos 0 del LCD. */
 #define PIN_NUM_DATA0               14
+/** @brief Pin de datos 1 del LCD. */
 #define PIN_NUM_DATA1               38
+/** @brief Pin de datos 2 del LCD. */
 #define PIN_NUM_DATA2               18
+/** @brief Pin de datos 3 del LCD. */
 #define PIN_NUM_DATA3               17
+/** @brief Pin de datos 4 del LCD. */
 #define PIN_NUM_DATA4               10
+/** @brief Pin de datos 5 del LCD. */
 #define PIN_NUM_DATA5               39
+/** @brief Pin de datos 6 del LCD. */
 #define PIN_NUM_DATA6               0
+/** @brief Pin de datos 7 del LCD. */
 #define PIN_NUM_DATA7               45
+/** @brief Pin de datos 8 del LCD. */
 #define PIN_NUM_DATA8               48
+/** @brief Pin de datos 9 del LCD. */
 #define PIN_NUM_DATA9               47
+/** @brief Pin de datos 10 del LCD. */
 #define PIN_NUM_DATA10              21
+/** @brief Pin de datos 11 del LCD. */
 #define PIN_NUM_DATA11              1
+/** @brief Pin de datos 12 del LCD. */
 #define PIN_NUM_DATA12              2
+/** @brief Pin de datos 13 del LCD. */
 #define PIN_NUM_DATA13              42
+/** @brief Pin de datos 14 del LCD. */
 #define PIN_NUM_DATA14              41
+/** @brief Pin de datos 15 del LCD. */
 #define PIN_NUM_DATA15              40
 
+/** @brief Resolución horizontal del LCD. */
 #define LCD_H_RES                   800
+/** @brief Resolución vertical del LCD. */
 #define LCD_V_RES                   480
 
 #if CONFIG_DOUBLE_FB
+/** @brief Número de framebuffers si se usa doble buffer. */
 #define LCD_NUM_FB                  2
 #else
+/** @brief Número de framebuffers en modo simple. */
 #define LCD_NUM_FB                  1
 #endif
 
+/** @brief Período del tick de LVGL en milisegundos. */
 #define LVGL_TICK_PERIOD_MS         2
+/** @brief Delay máximo de la tarea LVGL en milisegundos. */
 #define LVGL_TASK_MAX_DELAY_MS      500
+/** @brief Delay mínimo de la tarea LVGL en milisegundos. */
 #define LVGL_TASK_MIN_DELAY_MS      1
+/** @brief Tamaño de la pila para la tarea LVGL. */
 #define LVGL_TASK_STACK_SIZE        (8 * 1024)
+/** @brief Prioridad de la tarea LVGL. */
 #define LVGL_TASK_PRIORITY          2
 
-#define UART_NUM 2
-#define UART_TX_PIN 43
-#define UART_RX_PIN 44
-#define UART_BUFFER_SIZE 2048
+/** @brief Número del puerto UART a utilizar. */
+#define UART_NUM                    2
+/** @brief Pin de transmisión (TX) del UART. */
+#define UART_TX_PIN                 43
+/** @brief Pin de recepción (RX) del UART. */
+#define UART_RX_PIN                 44
+/** @brief Tamaño del buffer del UART. */
+#define UART_BUFFER_SIZE            2048
 
-#define MAX_RETRIES_ACK 3
-#define ACK_TIMEOUT_MS 1000
-#define STX 0x02
-#define ETX 0x03
+/** @brief Número máximo de reintentos para esperar ACK. */
+#define MAX_RETRIES_ACK             3
+/** @brief Timeout en milisegundos para esperar ACK. */
+#define ACK_TIMEOUT_MS              1000
+/** @brief Carácter de inicio de transmisión (STX). */
+#define STX                         0x02
+/** @brief Carácter de fin de transmisión (ETX). */
+#define ETX                         0x03
 
-#define MAX_ITEMS 10
+/** @brief Número máximo de productos. */
+#define MAX_ITEMS                   10
 
-#define CONFIG_PASSWORD "root"                      // Contraseña por defecto para acceder a la configuración general
-
+/** @brief Contraseña por defecto para la configuración general. */
+#define CONFIG_PASSWORD             "root"
 
 
 
