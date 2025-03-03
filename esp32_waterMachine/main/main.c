@@ -3260,7 +3260,7 @@ Para mayor información, consulta las secciones correspondientes en el resto de 
   * @note Se recomienda llamar a esta función periódicamente para mantener
   *       persistente el tiempo actual entre reinicios.
   * \todo Implementar un mecanismo de guardado periódico para evitar pérdida de datos 
-  *       ni tampoco un execeso de escrituras.
+  *       ni tampoco un exceso de escrituras.
   */
  void save_epoch(time_t epoch) {
      nvs_handle_t my_handle;
