@@ -189,6 +189,7 @@ Para mayor información, consulta las secciones correspondientes en el resto de 
  
  /** 
   * @defgroup lvgl_ui_vars Variables para la interfaz LVGL y UI general
+  * @brief Variables para la interfaz gráfica y estructura general de la aplicación.
   * @{
   */
  static SemaphoreHandle_t lvgl_mux = NULL;           /**<    Mutex para LVGL */
@@ -201,6 +202,7 @@ Para mayor información, consulta las secciones correspondientes en el resto de 
  
  /** 
   * @defgroup wifi_vars Variables para la conexión WiFi
+  * @brief Variables y estructuras para la gestión de la conexión WiFi.
   * @{
   */
  static lv_obj_t *wifi_status_icon = NULL;           /**< Icono de estado de WiFi */
@@ -223,7 +225,8 @@ Para mayor información, consulta las secciones correspondientes en el resto de 
  /** @} */
  
  /** 
-  * @defgroup uart_vars Variables para la comunicación UART
+  * @defgroup uart_vars Variables para la comunicación UART}
+  * @brief Variables y estructuras para la comunicación UART.
   * @{
   */
  static QueueHandle_t uart_event_queue = NULL;       /**< Cola para eventos de UART */
@@ -237,6 +240,7 @@ Para mayor información, consulta las secciones correspondientes en el resto de 
  
  /** 
   * @defgroup config_trans_vars Variables para la configuración y transacciones
+  * @brief Variables para la configuración y transacciones.
   * @{
   */
  static lv_obj_t *config_password_dialog = NULL;     /**< Diálogo para cambiar la contraseña de configuración */
@@ -245,6 +249,7 @@ Para mayor información, consulta las secciones correspondientes en el resto de 
  
  /** 
   * @defgroup product_vars Variables para la gestión de productos
+  * @brief Variables y estructuras para la gestión de productos.
   * @{
   */
  static uint32_t cont_index = 0;                     /**< Índice de productos actuales */
